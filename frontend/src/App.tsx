@@ -449,12 +449,12 @@ function PluginsView() {
             className="font-mono"
             style={{
               border: "3px solid black",
-              padding: "8px 12px",
+              padding: "6px 12px",
               outline: "none",
               boxShadow: "3px 3px 0px black",
               fontSize: "0.85rem",
               fontWeight: 700,
-              width: "220px"
+              width: "200px"
             }}
           />
           {/* Filter Buttons */}
@@ -464,7 +464,7 @@ function PluginsView() {
             style={{ 
               backgroundColor: activeFilter === "ALL" ? "var(--system-yellow)" : "white",
               fontSize: "0.8rem",
-              padding: "8px 12px",
+              padding: "6px 12px",
               boxShadow: "3px 3px 0px black"
             }}
           >
@@ -476,7 +476,7 @@ function PluginsView() {
             style={{ 
               backgroundColor: activeFilter === "INSTALLED" ? "var(--system-yellow)" : "white",
               fontSize: "0.8rem",
-              padding: "8px 12px",
+              padding: "6px 12px",
               boxShadow: "3px 3px 0px black"
             }}
           >
@@ -488,8 +488,8 @@ function PluginsView() {
       {/* Plugins Grid */}
       <div style={{ 
         display: "grid", 
-        gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", 
-        gap: "var(--space-lg)",
+        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+        gap: "var(--space-md)",
         marginTop: "var(--space-lg)"
       }}>
         {filteredPlugins.map(plugin => (
@@ -498,50 +498,52 @@ function PluginsView() {
             padding: 0, 
             display: "flex", 
             flexDirection: "column",
-            minHeight: "360px",
+            minHeight: "230px",
             overflow: "hidden"
           }}>
             {/* Header colored banner */}
             <div style={{ 
               backgroundColor: plugin.color, 
               borderBottom: "3px solid black", 
-              padding: "var(--space-md)",
+              padding: "6px var(--space-sm)",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center"
             }}>
               <div>
-                <h3 className="font-heading" style={{ fontSize: "1.2rem", color: "black" }}>{plugin.name}</h3>
-                <span className="badge" style={{ backgroundColor: "white", marginTop: "4px", fontSize: "0.65rem", padding: "1px 6px" }}>
+                <h3 className="font-heading" style={{ fontSize: "0.95rem", color: "black" }}>{plugin.name}</h3>
+                <span className="badge" style={{ backgroundColor: "white", marginTop: "1px", fontSize: "0.55rem", padding: "0px 3px" }}>
                   {plugin.badgeText}
                 </span>
               </div>
               <span className="badge" style={{ 
                 backgroundColor: "black", 
                 color: plugin.color, 
-                borderColor: "black" 
+                borderColor: "black",
+                fontSize: "0.6rem",
+                padding: "0px 3px"
               }}>
                 {plugin.status}
               </span>
             </div>
 
             {/* Description Body */}
-            <div style={{ padding: "var(--space-md)", flex: 1, display: "flex", flexDirection: "column" }}>
-              <p className="font-heading" style={{ fontSize: "0.85rem", marginBottom: "var(--space-sm)" }}>{plugin.tagline}</p>
-              <p style={{ fontSize: "0.85rem", color: "#334155", lineHeight: 1.4, marginBottom: "var(--space-md)" }}>{plugin.description}</p>
+            <div style={{ padding: "var(--space-sm)", flex: 1, display: "flex", flexDirection: "column" }}>
+              <p className="font-heading" style={{ fontSize: "0.75rem", marginBottom: "2px" }}>{plugin.tagline}</p>
+              <p style={{ fontSize: "0.72rem", color: "#334155", lineHeight: 1.2, marginBottom: "var(--space-xs)" }}>{plugin.description}</p>
               
               {/* Exposed Info Grid */}
               <div style={{ 
                 border: "2px solid black", 
                 backgroundColor: "var(--secondary-bg)", 
-                padding: "var(--space-sm)", 
+                padding: "4px 6px", 
                 display: "flex", 
                 flexDirection: "column",
-                gap: "4px",
+                gap: "1px",
                 marginTop: "auto"
               }} className="font-mono">
                 {plugin.details.map((detail, idx) => (
-                  <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem" }}>
+                  <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
                     <span style={{ fontWeight: 700 }}>{detail.label}:</span>
                     <span>{detail.value}</span>
                   </div>
@@ -552,7 +554,7 @@ function PluginsView() {
             {/* Actions Footer */}
             <div style={{ 
               borderTop: "3px solid black", 
-              padding: "8px 16px", 
+              padding: "4px 8px", 
               backgroundColor: "var(--secondary-bg)",
               display: "flex",
               gap: "var(--space-sm)",
@@ -563,9 +565,9 @@ function PluginsView() {
                   key={idx} 
                   className="btn" 
                   style={{ 
-                    padding: "4px 10px", 
-                    fontSize: "0.75rem", 
-                    boxShadow: "2px 2px 0px black",
+                    padding: "2px 6px", 
+                    fontSize: "0.65rem", 
+                    boxShadow: "1.5px 1.5px 0px black",
                     backgroundColor: idx === 0 ? "white" : "black",
                     color: idx === 0 ? "black" : "white"
                   }}
