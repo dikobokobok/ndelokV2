@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef, Fragment } from "react";
-import { Activity, Cpu, HardDrive, Network, Package, Terminal, Settings, LayoutDashboard, FileText, Folder, ChevronRight, ArrowUp } from "lucide-react";
+import { Activity, Cpu, HardDrive, Network, Package, Terminal, Settings, LayoutDashboard, FileText, Folder, ChevronRight, ArrowUp, Bot, Send, Zap, Server, Shield, RefreshCw, Trash2 } from "lucide-react";
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<"Dashboard" | "Plugins" | "Deploy" | "Explorer" | "Logs & Term" | "Settings">("Dashboard");
+  const [currentView, setCurrentView] = useState<"Dashboard" | "Plugins" | "Deploy" | "Explorer" | "Logs & Term" | "AI Agent" | "Settings">("Dashboard");
   const [metrics, setMetrics] = useState({
     cpu: 0,
     ram: 0,
@@ -104,6 +104,12 @@ export default function App() {
             onClick={() => setCurrentView("Logs & Term")}
           />
           <NavItem 
+            icon={<Bot size={20} />} 
+            label="AI Agent" 
+            active={currentView === "AI Agent"}
+            onClick={() => setCurrentView("AI Agent")}
+          />
+          <NavItem 
             icon={<Settings size={20} />} 
             label="Settings" 
             active={currentView === "Settings"}
@@ -111,8 +117,15 @@ export default function App() {
           />
         </nav>
 
-        <div style={{ marginTop: "auto" }} className="card">
-          <p className="font-heading" style={{ fontSize: "0.85rem", marginBottom: "var(--space-xs)" }}>AI AGENT</p>
+        <div 
+          style={{ marginTop: "auto", cursor: "pointer" }} 
+          className="card"
+          onClick={() => setCurrentView("AI Agent")}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+            <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "var(--system-green)", border: "1.5px solid black", animation: "pulse 2s infinite" }} />
+            <p className="font-heading" style={{ fontSize: "0.85rem" }}>AI AGENT</p>
+          </div>
           <p style={{ fontSize: "0.75rem", color: "#475569" }}>Ready to help you deploy.</p>
         </div>
       </aside>
@@ -282,7 +295,8 @@ export default function App() {
         {currentView === "Deploy" && <DeployView />}
         {currentView === "Explorer" && <ExplorerView />}
         {currentView === "Logs & Term" && <LogsTermView />}
-        {currentView !== "Dashboard" && currentView !== "Plugins" && currentView !== "Deploy" && currentView !== "Explorer" && currentView !== "Logs & Term" && (
+        {currentView === "AI Agent" && <AIAgentView />}
+        {currentView !== "Dashboard" && currentView !== "Plugins" && currentView !== "Deploy" && currentView !== "Explorer" && currentView !== "Logs & Term" && currentView !== "AI Agent" && (
           <div>
             <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>{currentView.toUpperCase()}</h2>
             <p className="font-mono" style={{ fontSize: "0.85rem", color: "#475569", marginTop: "var(--space-md)" }}>
@@ -3238,6 +3252,12 @@ function LogsTermView() {
   const [isStreaming, setIsStreaming] = useState(true);
   const [logFilter, setLogFilter] = useState<"ALL" | "INFO" | "WARN" | "ERROR">("ALL");
 
+  // Panel maximize/minimize states
+  const [isLogMinimized, setIsLogMinimized] = useState(false);
+  const [isLogMaximized, setIsLogMaximized] = useState(false);
+  const [isTermMinimized, setIsTermMinimized] = useState(false);
+  const [isTermMaximized, setIsTermMaximized] = useState(false);
+
   const [terminalLines, setTerminalLines] = useState<string[]>([
     "Ndelok Server Shell Terminal (Mock SSH Session)",
     "System: ndelokOS v0.18.0 (kernel 6.1-amd64)",
@@ -3532,30 +3552,46 @@ function LogsTermView() {
               >
                 CLEAR
               </button>
+
+              {/* Minimize button */}
+              <button
+                onClick={() => { setIsLogMinimized(v => !v); setIsLogMaximized(false); }}
+                title={isLogMinimized ? "Restore" : "Minimize"}
+                style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#fef08a", cursor: "pointer", fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}
+              >–</button>
+
+              {/* Maximize button */}
+              <button
+                onClick={() => { setIsLogMaximized(v => !v); setIsLogMinimized(false); }}
+                title={isLogMaximized ? "Restore Down" : "Maximize"}
+                style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#bbf7d0", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}
+              >{isLogMaximized ? "❐" : "⬜"}</button>
             </div>
           </div>
 
-          <div style={streamBodyStyle} className="font-mono">
-            {filteredLogs.length === 0 ? (
-              <div style={{ color: "#475569", textAlign: "center", padding: "20px", fontSize: "0.75rem" }}>
-                No logs generated yet or logs cleared.
-              </div>
-            ) : (
-              filteredLogs.map((log, idx) => (
-                <div key={idx} style={{ display: "flex", gap: "8px", borderBottom: "1px solid #141b2d", padding: "4px 0", fontSize: "0.7rem", alignItems: "flex-start" }}>
-                  <span style={{ color: "#64748b", flexShrink: 0 }}>[{log.timestamp}]</span>
-                  <span style={{ 
-                    color: log.level === "ERROR" ? "var(--system-red)" : log.level === "WARN" ? "var(--system-yellow)" : "var(--system-green)",
-                    fontWeight: "bold",
-                    flexShrink: 0
-                  }}>[{log.level}]</span>
-                  <span style={{ color: "#38bdf8", fontWeight: 700, flexShrink: 0 }}>[{log.source}]</span>
-                  <span style={{ color: "#e2e8f0" }}>{log.message}</span>
+          {!isLogMinimized && (
+            <div style={streamBodyStyle} className="font-mono">
+              {filteredLogs.length === 0 ? (
+                <div style={{ color: "#475569", textAlign: "center", padding: "20px", fontSize: "0.75rem" }}>
+                  No logs generated yet or logs cleared.
                 </div>
-              ))
-            )}
-            <div ref={logsEndRef} />
-          </div>
+              ) : (
+                filteredLogs.map((log, idx) => (
+                  <div key={idx} style={{ display: "flex", gap: "8px", borderBottom: "1px solid #141b2d", padding: "4px 0", fontSize: "0.7rem", alignItems: "flex-start" }}>
+                    <span style={{ color: "#64748b", flexShrink: 0 }}>[{log.timestamp}]</span>
+                    <span style={{ 
+                      color: log.level === "ERROR" ? "var(--system-red)" : log.level === "WARN" ? "var(--system-yellow)" : "var(--system-green)",
+                      fontWeight: "bold",
+                      flexShrink: 0
+                    }}>[{log.level}]</span>
+                    <span style={{ color: "#38bdf8", fontWeight: 700, flexShrink: 0 }}>[{log.source}]</span>
+                    <span style={{ color: "#e2e8f0" }}>{log.message}</span>
+                  </div>
+                ))
+              )}
+              <div ref={logsEndRef} />
+            </div>
+          )}
         </div>
 
         {/* Right Pane: SSH Terminal Console */}
@@ -3565,45 +3601,456 @@ function LogsTermView() {
               <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
               SSH TERMINAL CONSOLE
             </span>
-            <div className="badge font-mono" style={{ fontSize: "0.6rem", backgroundColor: "black", color: "white" }}>
-              admin@ndelok-server
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <div className="badge font-mono" style={{ fontSize: "0.6rem", backgroundColor: "black", color: "white" }}>
+                admin@ndelok-server
+              </div>
+              {/* Minimize button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); setIsTermMinimized(v => !v); setIsTermMaximized(false); }}
+                title={isTermMinimized ? "Restore" : "Minimize"}
+                style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#fef08a", cursor: "pointer", fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}
+              >–</button>
+              {/* Maximize button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); setIsTermMaximized(v => !v); setIsTermMinimized(false); }}
+                title={isTermMaximized ? "Restore Down" : "Maximize"}
+                style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#bbf7d0", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}
+              >{isTermMaximized ? "❐" : "⬜"}</button>
             </div>
           </div>
 
-          <div style={{ ...streamBodyStyle, backgroundColor: "#000000", padding: "16px" }} className="font-mono">
-            <div style={{ fontSize: "0.7rem", color: "#a7f3d0", whiteSpace: "pre-wrap", overflowX: "auto" }}>
-              {terminalLines.map((line, idx) => (
-                <div key={idx} style={{ minHeight: "1.2em" }}>{line}</div>
-              ))}
+          {!isTermMinimized && (
+            <>
+              <div style={{ ...streamBodyStyle, backgroundColor: "#000000", padding: "16px" }} className="font-mono">
+                <div style={{ fontSize: "0.7rem", color: "#a7f3d0", whiteSpace: "pre-wrap", overflowX: "auto" }}>
+                  {terminalLines.map((line, idx) => (
+                    <div key={idx} style={{ minHeight: "1.2em" }}>{line}</div>
+                  ))}
 
-              <form onSubmit={handleCommandSubmit} style={{ display: "flex", alignItems: "center", marginTop: "4px" }}>
-                <span style={{ color: "#38bdf8", marginRight: "6px", flexShrink: 0 }}>admin@ndelok-server:~$</span>
-                <input 
-                  type="text" 
-                  value={commandInput} 
-                  onChange={(e) => setCommandInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  ref={terminalInputRef}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    outline: "none",
-                    color: "#22c55e",
-                    fontFamily: "var(--font-space-mono), monospace",
-                    fontSize: "0.7rem",
-                    flex: 1,
-                    caretColor: "#22c55e",
-                    padding: 0
-                  }}
-                  autoFocus
-                />
-              </form>
-            </div>
-            <div ref={terminalEndRef} />
-          </div>
+                  <form onSubmit={handleCommandSubmit} style={{ display: "flex", alignItems: "center", marginTop: "4px" }}>
+                    <span style={{ color: "#38bdf8", marginRight: "6px", flexShrink: 0 }}>admin@ndelok-server:~$</span>
+                    <input 
+                      type="text" 
+                      value={commandInput} 
+                      onChange={(e) => setCommandInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      ref={terminalInputRef}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        outline: "none",
+                        color: "#22c55e",
+                        fontFamily: "var(--font-space-mono), monospace",
+                        fontSize: "0.7rem",
+                        flex: 1,
+                        caretColor: "#22c55e",
+                        padding: 0
+                      }}
+                      autoFocus
+                    />
+                  </form>
+                </div>
+                <div ref={terminalEndRef} />
+              </div>
+            </>
+          )}
         </div>
 
       </div>
+
+      {/* Log Stream Maximized Overlay */}
+      {isLogMaximized && (
+        <>
+          <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 998 }} onClick={() => setIsLogMaximized(false)} />
+          <div style={{ position: "fixed", inset: 0, zIndex: 999, display: "flex", flexDirection: "column", backgroundColor: "#090d16", border: "3px solid black", boxShadow: "0 0 0 4px black" }}>
+            <div style={{ ...consoleHeaderStyle("var(--system-green)"), flexShrink: 0 }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+                SYSTEM LOG STREAM
+              </span>
+              <div style={toolbarStyle}>
+                <div style={{ display: "flex", border: "2px solid black", boxShadow: "1px 1px 0px black", backgroundColor: "white" }}>
+                  {(["ALL", "INFO", "WARN", "ERROR"] as const).map(f => (
+                    <button key={f} onClick={() => setLogFilter(f)} style={{ padding: "2px 6px", fontSize: "0.6rem", fontWeight: "bold", border: "none", borderRight: f !== "ERROR" ? "1.5px solid black" : "none", backgroundColor: logFilter === f ? "var(--system-blue)" : "white", cursor: "pointer" }}>{f}</button>
+                  ))}
+                </div>
+                <button className="btn" onClick={() => setIsStreaming(!isStreaming)} style={{ padding: "2px 6px", fontSize: "0.6rem", backgroundColor: isStreaming ? "#fef08a" : "var(--system-green)", boxShadow: "1.5px 1.5px 0px black" }}>{isStreaming ? "PAUSE" : "RESUME"}</button>
+                <button className="btn" onClick={() => setLogs([])} style={{ padding: "2px 6px", fontSize: "0.6rem", backgroundColor: "#fecaca", boxShadow: "1.5px 1.5px 0px black" }}>CLEAR</button>
+                <button onClick={() => setIsLogMaximized(false)} title="Restore Down" style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#bbf7d0", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}>❐</button>
+              </div>
+            </div>
+            <div style={{ flex: 1, padding: "12px", overflowY: "auto", lineHeight: 1.4 }} className="font-mono">
+              {filteredLogs.length === 0 ? (
+                <div style={{ color: "#475569", textAlign: "center", padding: "20px", fontSize: "0.75rem" }}>No logs generated yet or logs cleared.</div>
+              ) : (
+                filteredLogs.map((log, idx) => (
+                  <div key={idx} style={{ display: "flex", gap: "8px", borderBottom: "1px solid #141b2d", padding: "4px 0", fontSize: "0.75rem", alignItems: "flex-start" }}>
+                    <span style={{ color: "#64748b", flexShrink: 0 }}>[{log.timestamp}]</span>
+                    <span style={{ color: log.level === "ERROR" ? "var(--system-red)" : log.level === "WARN" ? "var(--system-yellow)" : "var(--system-green)", fontWeight: "bold", flexShrink: 0 }}>[{log.level}]</span>
+                    <span style={{ color: "#38bdf8", fontWeight: 700, flexShrink: 0 }}>[{log.source}]</span>
+                    <span style={{ color: "#e2e8f0" }}>{log.message}</span>
+                  </div>
+                ))
+              )}
+              <div ref={logsEndRef} />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* SSH Terminal Maximized Overlay */}
+      {isTermMaximized && (
+        <>
+          <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 998 }} onClick={() => setIsTermMaximized(false)} />
+          <div style={{ position: "fixed", inset: 0, zIndex: 999, display: "flex", flexDirection: "column", backgroundColor: "#000000", border: "3px solid black", boxShadow: "0 0 0 4px black" }} onClick={() => terminalInputRef.current?.focus()}>
+            <div style={{ ...consoleHeaderStyle("var(--system-blue)"), flexShrink: 0 }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+                SSH TERMINAL CONSOLE
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <div className="badge font-mono" style={{ fontSize: "0.6rem", backgroundColor: "black", color: "white" }}>admin@ndelok-server</div>
+                <button onClick={(e) => { e.stopPropagation(); setIsTermMaximized(false); }} title="Restore Down" style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#bbf7d0", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}>❐</button>
+              </div>
+            </div>
+            <div style={{ flex: 1, backgroundColor: "#000000", padding: "16px", overflowY: "auto", lineHeight: 1.4 }} className="font-mono">
+              <div style={{ fontSize: "0.8rem", color: "#a7f3d0", whiteSpace: "pre-wrap", overflowX: "auto" }}>
+                {terminalLines.map((line, idx) => (
+                  <div key={idx} style={{ minHeight: "1.2em" }}>{line}</div>
+                ))}
+                <form onSubmit={handleCommandSubmit} style={{ display: "flex", alignItems: "center", marginTop: "4px" }}>
+                  <span style={{ color: "#38bdf8", marginRight: "6px", flexShrink: 0 }}>admin@ndelok-server:~$</span>
+                  <input
+                    type="text"
+                    value={commandInput}
+                    onChange={(e) => setCommandInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    ref={terminalInputRef}
+                    style={{ background: "transparent", border: "none", outline: "none", color: "#22c55e", fontFamily: "var(--font-space-mono), monospace", fontSize: "0.8rem", flex: 1, caretColor: "#22c55e", padding: 0 }}
+                    autoFocus
+                  />
+                </form>
+              </div>
+              <div ref={terminalEndRef} />
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+interface ChatMessage {
+  id: string;
+  role: "user" | "agent";
+  content: string;
+  timestamp: string;
+  actions?: string[];
+}
+
+function AIAgentView() {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: "welcome",
+      role: "agent",
+      content: "Halo! Saya **NDELOK AI Agent** — asisten pintar untuk manajemen server Anda.\n\nSaya bisa membantu:\n• **Deploy** layanan baru dan monitoring\n• **Diagnosa** masalah sistem & log analisis\n• **Manage** plugin, network, dan konfigurasi\n• **Monitor** performa server secara real-time\n\nApa yang ingin kamu lakukan hari ini?",
+      timestamp: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
+      actions: ["Lihat Status Server", "Deploy Layanan Baru", "Analisa Log Sistem", "Cek Performa CPU/RAM"]
+    }
+  ]);
+
+  const [inputValue, setInputValue] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [sessionId] = useState(() => `SESSION-${Math.random().toString(36).slice(2, 8).toUpperCase()}`);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isTyping]);
+
+  const getAgentResponse = (userMsg: string): { content: string; actions?: string[] } => {
+    const msg = userMsg.toLowerCase();
+
+    if (msg.includes("status") || msg.includes("health") || msg.includes("lihat status server")) {
+      return {
+        content: "✅ **Status Server: HEALTHY**\n\n```\nSERVER: production-01\nUPTIME: 4 days, 5h 32m\nOS: ndelokOS v0.18.0 (kernel 6.1-amd64)\n```\n\n**Metrik Real-time:**\n• CPU: 24% — Normal ✓\n• RAM: 312MB / 2048MB (15%) — Optimal ✓\n• Storage: 42% — Aman ✓\n• Network: ↓ 12.4 MB/s ↑ 2.1 MB/s\n\n**Layanan:**\n• ndelok-dashboard → ONLINE (port 1234)\n• api-gateway → ONLINE (port 3000)\n• postgres-db → ONLINE (port 5432)\n• auth-service → STOPPED ⚠️\n\n⚠️ `auth-service` tidak berjalan. Ingin saya restart?",
+        actions: ["Restart auth-service", "Lihat Log auth-service", "Cek Semua Layanan"]
+      };
+    }
+    if (msg.includes("deploy") || msg.includes("layanan baru") || msg.includes("launch")) {
+      return {
+        content: "🚀 **Mode Deploy Aktif**\n\nSilakan berikan informasi berikut:\n\n1. **Nama Layanan** (contoh: `payment-api`)\n2. **Port** yang digunakan (contoh: `3001`)\n3. **Sumber kode** — GitHub URL atau upload ZIP\n4. **Build command** (contoh: `npm install && npm run build`)\n5. **Start command** (contoh: `npm run start`)\n\nAtau gunakan wizard visual di halaman **Deploy**.",
+        actions: ["Buka Halaman Deploy", "Deploy via GitHub", "Upload ZIP File"]
+      };
+    }
+    if (msg.includes("log") || msg.includes("error") || msg.includes("masalah") || msg.includes("diagnosa") || msg.includes("analisa log")) {
+      return {
+        content: "🔍 **Analisa Log Sistem — 5 Menit Terakhir**\n\n```\n[01:52:25] [ERROR] [SYSTEM]  Failed healthcheck on payment-system:3002\n[01:52:26] [WARN]  [PM2]     Process payment-system restarted (exit code 1)\n[01:54:33] [WARN]  [SYSTEM]  Disk storage 82% on root partition\n[01:54:49] [ERROR] [AUTH]    Invalid API secret from IP 182.253.12.8\n```\n\n**Temuan:**\n1. ❌ `payment-system` crash berulang — kemungkinan memory leak\n2. ⚠️ Disk hampir penuh — perlu cleanup\n3. 🚨 Akses tidak sah dari IP `182.253.12.8`\n\nIngin saya jalankan tindakan otomatis?",
+        actions: ["Restart payment-system", "Bersihkan Disk Cache", "Block IP 182.253.12.8", "Export Full Report"]
+      };
+    }
+    if (msg.includes("cpu") || msg.includes("ram") || msg.includes("performa") || msg.includes("memory") || msg.includes("cek performa")) {
+      return {
+        content: "📊 **Laporan Performa Sistem**\n\n**CPU — Intel Xeon E5-2673 v4 @ 2.3GHz**\n• Current Load: 24% — Ringan\n• Peak 1h: 78% pukul 01:52\n• Avg 24h: 31%\n\n**RAM — 2048MB DDR4**\n• Digunakan: 312MB (15.2%)\n• Cached: 842MB\n• Free: 894MB\n\n**Top Proses:**\n```\nndelok-dashboard   128MB   2.5%\npostgres           512MB   0.8%\napi-gateway         96MB   1.1%\n```\n\n✅ Performa dalam kondisi baik.",
+        actions: ["Set CPU Alert", "Lihat Semua Proses", "Optimize Memory"]
+      };
+    }
+    if (msg.includes("plugin") || msg.includes("zerotier") || msg.includes("cloudflare") || msg.includes("docker") || msg.includes("manage plugin")) {
+      return {
+        content: "🔌 **Status Plugin Manager**\n\n| Plugin | Versi | Status |\n|--------|-------|--------|\n| ZeroTier ONE | v1.12.2 | 🟢 ONLINE |\n| Tmux | v3.3a | 🟢 RUNNING |\n| Cloudflare | v2024.1.0 | 🟢 CONNECTED |\n| Docker | v24.0.7 | ⚫ NOT INSTALLED |\n| Nginx | v1.25.3 | ⚫ NOT INSTALLED |\n\n**ZeroTier:** Network `8056c85e45c71a39`, IP: `10.147.20.12`\n**Cloudflare:** Tunnel aktif ke `ndelok.me` via PoP CGK",
+        actions: ["Install Docker", "Install Nginx", "Konfigurasi ZeroTier", "Buka Plugin Manager"]
+      };
+    }
+    if (msg.includes("restart") || msg.includes("stop") || msg.includes("start")) {
+      const svc = msg.includes("auth") ? "auth-service" : msg.includes("payment") ? "payment-system" : "ndelok-dashboard";
+      return {
+        content: `⚙️ **Menjalankan Perintah Server**\n\n\`\`\`bash\nadmin@ndelok-server:~$ pm2 restart ${svc}\n\`\`\`\n\n📤 Mengirim perintah...\n✅ **${svc} berhasil direstart!**\n\n**Output:**\n\`\`\`\n[PM2] Applying action restartProcessId on [${svc}]\n[PM2] [${svc}](2847) ✓\n\`\`\`\n\n✅ Layanan kembali online.`,
+        actions: ["Monitor Layanan", "Lihat Log Real-time", "Set Auto-restart"]
+      };
+    }
+    if (msg.includes("network") || msg.includes("jaringan") || msg.includes("koneksi") || msg.includes("keamanan") || msg.includes("security audit")) {
+      return {
+        content: "🌐 **Status Jaringan Server**\n\n**Interface Aktif:**\n```\neth0     172.16.0.1/24   ↑ 2.1MB/s  ↓ 12.4MB/s\nzt0      10.147.20.12/8  ZeroTier VPN\nlo       127.0.0.1       Loopback\n```\n\n**Port Terbuka:**\n```\n22    SSH      LISTEN\n80    HTTP     LISTEN\n443   HTTPS    LISTEN\n1234  Ndelok   LISTEN\n3000  API GW   LISTEN\n5432  Postgres LISTEN\n```\n\n**Cloudflare:** ✅ Connected — ndelok.me — Latency: 12ms",
+        actions: ["Lihat Semua Koneksi", "Check Firewall", "Konfigurasi Port"]
+      };
+    }
+    return {
+      content: `🤖 Saya menerima: *"${userMsg}"*\n\nCoba tanyakan tentang:\n• **Status** server & layanan\n• **Deploy** layanan baru\n• **Log** & diagnosa masalah\n• **Performa** CPU/RAM/Storage\n• **Plugin** management\n• **Jaringan** & keamanan`,
+      actions: ["Cek Status Server", "Analisa Log", "Lihat Performa", "Manage Plugin"]
+    };
+  };
+
+  const sendMessage = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const userMsg: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: "user",
+      content: trimmed,
+      timestamp: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+    };
+    setMessages(prev => [...prev, userMsg]);
+    setInputValue("");
+    setIsTyping(true);
+    await new Promise(r => setTimeout(r, 800 + Math.random() * 1200));
+    const response = getAgentResponse(trimmed);
+    const agentMsg: ChatMessage = {
+      id: `msg-${Date.now()}-agent`,
+      role: "agent",
+      content: response.content,
+      timestamp: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
+      actions: response.actions
+    };
+    setIsTyping(false);
+    setMessages(prev => [...prev, agentMsg]);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    sendMessage(inputValue);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(inputValue);
+    }
+  };
+
+  const renderContent = (content: string) => {
+    const lines = content.split("\n");
+    let inCode = false;
+    const codeLines: string[] = [];
+    const result: React.ReactNode[] = [];
+    lines.forEach((line, i) => {
+      if (line.startsWith("```")) {
+        if (!inCode) { inCode = true; codeLines.length = 0; }
+        else {
+          inCode = false;
+          result.push(
+            <pre key={`c${i}`} style={{ backgroundColor: "#0f172a", color: "#a7f3d0", padding: "8px 12px", border: "1.5px solid #334155", fontSize: "0.7rem", overflowX: "auto", margin: "4px 0", fontFamily: "monospace", lineHeight: 1.5, whiteSpace: "pre" }}>
+              {codeLines.join("\n")}
+            </pre>
+          );
+        }
+        return;
+      }
+      if (inCode) { codeLines.push(line); return; }
+      const parts = line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+      result.push(
+        <div key={i} style={{ minHeight: line === "" ? "0.5em" : undefined }}>
+          {parts.map((p, j) => {
+            if (p.startsWith("**") && p.endsWith("**")) return <strong key={j}>{p.slice(2, -2)}</strong>;
+            if (p.startsWith("`") && p.endsWith("`")) return <code key={j} style={{ backgroundColor: "#1e293b", color: "#38bdf8", padding: "1px 5px", borderRadius: "3px", fontSize: "0.78em", fontFamily: "monospace", border: "1px solid #334155" }}>{p.slice(1, -1)}</code>;
+            return <span key={j}>{p}</span>;
+          })}
+        </div>
+      );
+    });
+    return result;
+  };
+
+  const quickSuggestions = [
+    { icon: <Server size={13} />, text: "Status Server" },
+    { icon: <Zap size={13} />, text: "Performa Sistem" },
+    { icon: <FileText size={13} />, text: "Analisa Log" },
+    { icon: <Shield size={13} />, text: "Keamanan" },
+    { icon: <RefreshCw size={13} />, text: "Restart Layanan" },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 80px)" }}>
+      {/* Header */}
+      <header style={{ marginBottom: "var(--space-md)", flexShrink: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: "var(--space-md)" }}>
+          <div>
+            <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>AI AGENT</h2>
+            <p className="font-mono" style={{ fontSize: "0.85rem", color: "#475569", marginTop: "var(--space-xs)" }}>
+              Asisten cerdas server management — tanya apa saja dalam Bahasa Indonesia maupun Inggris.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: "var(--space-sm)", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", border: "2px solid black", padding: "4px 10px", backgroundColor: "var(--system-green)", boxShadow: "2px 2px 0px black" }}>
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "black" }} />
+              <span className="font-heading" style={{ fontSize: "0.7rem" }}>AGENT ONLINE</span>
+            </div>
+            <div className="card font-mono" style={{ fontSize: "0.65rem", padding: "4px 8px", backgroundColor: "white" }}>{sessionId}</div>
+            <button className="btn" onClick={() => setMessages(prev => [prev[0]])} style={{ padding: "4px 10px", fontSize: "0.7rem", backgroundColor: "white", boxShadow: "2px 2px 0px black", display: "flex", alignItems: "center", gap: "4px" }}>
+              <Trash2 size={12} /> CLEAR
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Layout */}
+      <div style={{ display: "flex", flex: 1, gap: "var(--space-md)", overflow: "hidden", minHeight: 0 }}>
+
+        {/* Chat */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", border: "3px solid black", boxShadow: "6px 6px 0px black", overflow: "hidden", backgroundColor: "white" }}>
+          {/* Bar */}
+          <div style={{ backgroundColor: "var(--system-yellow)", borderBottom: "3px solid black", padding: "8px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+            <span className="font-heading" style={{ fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "8px" }}>
+              <Bot size={16} /> NDELOK AI AGENT CONSOLE
+            </span>
+            <span className="font-mono" style={{ fontSize: "0.65rem", color: "#475569" }}>{messages.length} pesan</span>
+          </div>
+
+          {/* Messages */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)", backgroundColor: "#f8fafc" }}>
+            {messages.map(msg => (
+              <div key={msg.id} style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start", gap: "6px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexDirection: msg.role === "user" ? "row-reverse" : "row" }}>
+                  <div style={{ width: "28px", height: "28px", border: "2px solid black", backgroundColor: msg.role === "agent" ? "var(--system-yellow)" : "black", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "2px 2px 0px " + (msg.role === "agent" ? "black" : "#555") }}>
+                    {msg.role === "agent" ? <Bot size={14} /> : <span style={{ color: "white", fontSize: "0.6rem", fontWeight: 700 }}>YOU</span>}
+                  </div>
+                  <span className="font-mono" style={{ fontSize: "0.6rem", color: "#64748b" }}>{msg.role === "agent" ? "NDELOK AI" : "ADMIN"} · {msg.timestamp}</span>
+                </div>
+                <div style={{ maxWidth: "80%", padding: "10px 14px", border: "2px solid black", backgroundColor: msg.role === "agent" ? "white" : "black", color: msg.role === "agent" ? "black" : "white", boxShadow: msg.role === "agent" ? "3px 3px 0px black" : "3px 3px 0px #555", lineHeight: 1.6, fontSize: "0.82rem" }} className="font-mono">
+                  {msg.role === "agent" ? renderContent(msg.content) : <span>{msg.content}</span>}
+                </div>
+                {msg.actions && msg.role === "agent" && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", maxWidth: "80%" }}>
+                    {msg.actions.map((action, idx) => (
+                      <button key={idx} className="btn" onClick={() => sendMessage(action)} style={{ padding: "3px 10px", fontSize: "0.65rem", backgroundColor: idx === 0 ? "var(--system-blue)" : "white", color: "black", boxShadow: "2px 2px 0px black", border: "1.5px solid black", cursor: "pointer", fontWeight: 700 }}>{action}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {isTyping && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div style={{ width: "28px", height: "28px", border: "2px solid black", backgroundColor: "var(--system-yellow)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "2px 2px 0px black" }}><Bot size={14} /></div>
+                  <span className="font-mono" style={{ fontSize: "0.6rem", color: "#64748b" }}>NDELOK AI · sedang mengetik...</span>
+                </div>
+                <div style={{ padding: "10px 18px", border: "2px solid black", backgroundColor: "white", boxShadow: "3px 3px 0px black", display: "flex", gap: "5px", alignItems: "center" }}>
+                  {[0, 1, 2].map(i => (
+                    <div key={i} style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "black", animation: `agentBounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+                  ))}
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Quick chips */}
+          <div style={{ borderTop: "2px solid black", padding: "8px 12px", display: "flex", gap: "6px", flexWrap: "wrap", backgroundColor: "var(--secondary-bg)", flexShrink: 0 }}>
+            <span className="font-heading" style={{ fontSize: "0.6rem", color: "#64748b", alignSelf: "center", marginRight: "2px" }}>CEPAT:</span>
+            {quickSuggestions.map((s, i) => (
+              <button key={i} className="btn" onClick={() => sendMessage(s.text)} style={{ padding: "2px 8px", fontSize: "0.6rem", backgroundColor: "white", border: "1.5px solid black", boxShadow: "1.5px 1.5px 0px black", display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
+                {s.icon}{s.text}
+              </button>
+            ))}
+          </div>
+
+          {/* Input */}
+          <div style={{ borderTop: "3px solid black", padding: "var(--space-sm)", backgroundColor: "white", flexShrink: 0 }}>
+            <form onSubmit={handleSubmit} style={{ display: "flex", gap: "var(--space-sm)", alignItems: "flex-end" }}>
+              <textarea ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder="Tanya AI Agent... (Enter kirim, Shift+Enter baris baru)" rows={2} className="font-mono" style={{ flex: 1, border: "3px solid black", padding: "8px 12px", fontSize: "0.82rem", outline: "none", resize: "none", boxShadow: "inset 2px 2px 0px rgba(0,0,0,0.08)", lineHeight: 1.5 }} />
+              <button type="submit" disabled={!inputValue.trim() || isTyping} style={{ padding: "10px 18px", backgroundColor: inputValue.trim() && !isTyping ? "black" : "#94a3b8", color: "white", border: "3px solid black", boxShadow: inputValue.trim() && !isTyping ? "4px 4px 0px #555" : "none", cursor: inputValue.trim() && !isTyping ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", fontWeight: 700, flexShrink: 0, height: "62px", transition: "all 0.1s" }}>
+                <Send size={16} />KIRIM
+              </button>
+            </form>
+            <p className="font-mono" style={{ fontSize: "0.6rem", color: "#94a3b8", marginTop: "4px" }}>Enter ↵ kirim · Shift+Enter baris baru · Responds dalam Bahasa Indonesia</p>
+          </div>
+        </div>
+
+        {/* Sidebar */}
+        <div style={{ width: "230px", flexShrink: 0, display: "flex", flexDirection: "column", gap: "var(--space-md)", overflowY: "auto" }}>
+          <div className="card" style={{ backgroundColor: "var(--system-green)", padding: 0, overflow: "hidden" }}>
+            <div style={{ borderBottom: "3px solid black", padding: "8px 12px" }}><p className="font-heading" style={{ fontSize: "0.8rem" }}>SERVER STATUS</p></div>
+            <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: "6px" }} className="font-mono">
+              {[{ label: "UPTIME", val: "4d 5h 32m" }, { label: "HOSTNAME", val: "ndelok-prod-01" }, { label: "KERNEL", val: "6.1-amd64" }, { label: "LOAD AVG", val: "0.12, 0.08" }].map(item => (
+                <div key={item.label} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", borderBottom: "1px solid rgba(0,0,0,0.15)", paddingBottom: "4px" }}>
+                  <span style={{ fontWeight: 700 }}>{item.label}</span><span>{item.val}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: "hidden", backgroundColor: "white" }}>
+            <div style={{ borderBottom: "3px solid black", padding: "8px 12px", backgroundColor: "var(--secondary-bg)" }}><p className="font-heading" style={{ fontSize: "0.8rem" }}>LAYANAN AKTIF</p></div>
+            <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: "7px" }} className="font-mono">
+              {[{ name: "ndelok-dashboard", status: "ONLINE", color: "var(--system-green)" }, { name: "api-gateway", status: "ONLINE", color: "var(--system-green)" }, { name: "postgres-db", status: "ONLINE", color: "var(--system-green)" }, { name: "auth-service", status: "STOPPED", color: "var(--system-red)" }].map(svc => (
+                <div key={svc.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.6rem" }}>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "120px" }}>{svc.name}</span>
+                  <span style={{ backgroundColor: svc.color, border: "1px solid black", padding: "1px 5px", fontSize: "0.55rem", fontWeight: 700, flexShrink: 0 }}>{svc.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: "hidden", backgroundColor: "white" }}>
+            <div style={{ borderBottom: "3px solid black", padding: "8px 12px", backgroundColor: "var(--system-blue)" }}><p className="font-heading" style={{ fontSize: "0.8rem" }}>KEMAMPUAN AI</p></div>
+            <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+              {[{ icon: <Server size={12} />, label: "Server Monitoring" }, { icon: <Zap size={12} />, label: "Auto Deployment" }, { icon: <FileText size={12} />, label: "Log Analysis" }, { icon: <Shield size={12} />, label: "Security Audit" }, { icon: <RefreshCw size={12} />, label: "Service Recovery" }].map(cap => (
+                <div key={cap.label} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.7rem" }} className="font-heading">
+                  <div style={{ width: "22px", height: "22px", border: "1.5px solid black", backgroundColor: "var(--secondary-bg)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{cap.icon}</div>
+                  {cap.label}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card font-mono" style={{ backgroundColor: "#0f172a", color: "#a7f3d0", fontSize: "0.6rem", border: "3px solid black", lineHeight: 1.7 }}>
+            <p style={{ color: "#38bdf8", fontWeight: 700, marginBottom: "4px" }}>▶ AGENT INFO</p>
+            <p>Model: NDELOK-LLM v2.1</p>
+            <p>Context: Server-aware</p>
+            <p>Lang: ID / EN</p>
+            <p style={{ marginTop: "6px", color: "#64748b" }}>Session: {sessionId}</p>
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes agentBounce {
+          0%, 60%, 100% { transform: translateY(0); }
+          30% { transform: translateY(-6px); }
+        }
+      `}</style>
     </div>
   );
 }
