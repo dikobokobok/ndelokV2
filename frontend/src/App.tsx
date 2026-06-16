@@ -1027,15 +1027,62 @@ function DeployView() {
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
-    if (e.dataTransfer.files) {
-      const filesArray = Array.from(e.dataTransfer.files).map(f => ({
-        name: f.name,
-        size: f.size,
-        path: f.name
-      }));
+    const items = e.dataTransfer.items;
+    if (!items) return;
+
+    const filesArray: any[] = [];
+
+    const traverseFileTree = async (entry: any, path = "") => {
+      if (entry.isFile) {
+        const file = await new Promise<File>((resolve, reject) => {
+          entry.file(resolve, reject);
+        });
+        filesArray.push({
+          name: file.name,
+          size: file.size,
+          path: path + file.name
+        });
+      } else if (entry.isDirectory) {
+        const dirReader = entry.createReader();
+        const readEntries = async () => {
+          return new Promise<any[]>((resolve, reject) => {
+            dirReader.readEntries(resolve, reject);
+          });
+        };
+
+        let entries = await readEntries();
+        let allEntries = [...entries];
+        while (entries.length > 0) {
+          entries = await readEntries();
+          if (entries.length > 0) {
+            allEntries = [...allEntries, ...entries];
+          }
+        }
+
+        for (const childEntry of allEntries) {
+          await traverseFileTree(childEntry, path + entry.name + "/");
+        }
+      }
+    };
+
+    const promises: Promise<void>[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === "file") {
+        const entry = typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null;
+        if (entry) {
+          promises.push(traverseFileTree(entry));
+        }
+      }
+    }
+
+    try {
+      await Promise.all(promises);
       setUploadedFiles(prev => [...prev, ...filesArray]);
+    } catch (err) {
+      console.error("Error reading dropped files/folders", err);
     }
   };
 
