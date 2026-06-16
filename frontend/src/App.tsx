@@ -276,7 +276,8 @@ export default function App() {
           </>
         )}
         {currentView === "Plugins" && <PluginsView />}
-        {currentView !== "Dashboard" && currentView !== "Plugins" && (
+        {currentView === "Deploy" && <DeployView />}
+        {currentView !== "Dashboard" && currentView !== "Plugins" && currentView !== "Deploy" && (
           <div>
             <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>{currentView.toUpperCase()}</h2>
             <p className="font-mono" style={{ fontSize: "0.85rem", color: "#475569", marginTop: "var(--space-md)" }}>
@@ -923,6 +924,530 @@ function PluginsView() {
                 </div>
               </div>
             )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function DeployView() {
+  const [projects, setProjects] = useState([
+    { id: "p1", name: "NDELOK DASHBOARD", port: 1234, status: "RUNNING", cpu: 2.5, ram: 128, storage: 420 },
+    { id: "p2", name: "API GATEWAY", port: 8080, status: "RUNNING", cpu: 1.1, ram: 96, storage: 210 },
+    { id: "p3", name: "AUTH SERVICE", port: 8081, status: "STOPPED", cpu: 0, ram: 0, storage: 180 },
+    { id: "p4", name: "DATABASE POSTGRES", port: 5432, status: "RUNNING", cpu: 0.8, ram: 512, storage: 14200 },
+    { id: "p5", name: "PAYMENT SYSTEM", port: 3002, status: "STOPPED", cpu: 0, ram: 0, storage: 350 }
+  ]);
+
+  // States for Deploy Modal
+  const [isDeployOpen, setIsDeployOpen] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [projectPort, setProjectPort] = useState("");
+  
+  // States for Edit Modal
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPort, setEditPort] = useState("");
+
+  // States for Logs Modal
+  const [isLogsOpen, setIsLogsOpen] = useState(false);
+  const [loggingProject, setLoggingProject] = useState<any>(null);
+
+  // Stats
+  const totalProjects = projects.length;
+  const runningProjects = projects.filter(p => p.status === "RUNNING").length;
+  const stoppedProjects = projects.filter(p => p.status === "STOPPED").length;
+
+  // Real-time CPU/RAM simulation for running services
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setProjects(prev => prev.map(p => {
+        if (p.status === "RUNNING") {
+          const deltaCpu = (Math.random() * 2 - 1);
+          const nextCpu = Math.max(0.1, parseFloat((p.cpu + deltaCpu).toFixed(1)));
+          const deltaRam = Math.floor(Math.random() * 11 - 5);
+          const nextRam = Math.max(16, p.ram + deltaRam);
+          return { ...p, cpu: nextCpu, ram: nextRam };
+        }
+        return p;
+      }));
+    }, 1500);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleToggleStatus = (id: string) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id === id) {
+        const nextStatus = p.status === "RUNNING" ? "STOPPED" : "RUNNING";
+        return {
+          ...p,
+          status: nextStatus,
+          cpu: nextStatus === "RUNNING" ? parseFloat((Math.random() * 5 + 1).toFixed(1)) : 0,
+          ram: nextStatus === "RUNNING" ? Math.floor(Math.random() * 200 + 64) : 0
+        };
+      }
+      return p;
+    }));
+  };
+
+  const handleDelete = (id: string) => {
+    if (window.confirm("Are you sure you want to delete this project?")) {
+      setProjects(prev => prev.filter(p => p.id !== id));
+    }
+  };
+
+  const handleDeploy = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectName || !projectPort) return;
+    const newProj = {
+      id: `p-${Date.now()}`,
+      name: projectName.toUpperCase(),
+      port: parseInt(projectPort),
+      status: "RUNNING",
+      cpu: parseFloat((Math.random() * 4 + 1).toFixed(1)),
+      ram: Math.floor(Math.random() * 150 + 64),
+      storage: Math.floor(Math.random() * 500 + 100)
+    };
+    setProjects(prev => [...prev, newProj]);
+    setProjectName("");
+    setProjectPort("");
+    setIsDeployOpen(false);
+  };
+
+  const handleOpenEdit = (proj: any) => {
+    setEditingId(proj.id);
+    setEditName(proj.name);
+    setEditPort(proj.port.toString());
+    setIsEditOpen(true);
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingId || !editName || !editPort) return;
+    setProjects(prev => prev.map(p => {
+      if (p.id === editingId) {
+        return {
+          ...p,
+          name: editName.toUpperCase(),
+          port: parseInt(editPort)
+        };
+      }
+      return p;
+    }));
+    setIsEditOpen(false);
+    setEditingId(null);
+  };
+
+  const handleOpenLogs = (proj: any) => {
+    setLoggingProject(proj);
+    setIsLogsOpen(true);
+  };
+
+  // Styles
+  const overlayStyle = {
+    position: "fixed" as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    backdropFilter: "blur(2px)",
+    zIndex: 999
+  };
+
+  const modalStyle = {
+    position: "fixed" as const,
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    width: "400px",
+    maxWidth: "95%",
+    backgroundColor: "white",
+    border: "3px solid black",
+    boxShadow: "8px 8px 0px black",
+    zIndex: 1000,
+    display: "flex",
+    flexDirection: "column" as const
+  };
+
+  const titleBarStyle = {
+    borderBottom: "3px solid black",
+    padding: "8px 12px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center"
+  };
+
+  const closeBtnStyle = {
+    width: "20px",
+    height: "20px",
+    border: "1.5px solid black",
+    backgroundColor: "#fecaca",
+    cursor: "pointer",
+    fontSize: "0.7rem",
+    fontWeight: "bold" as const,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    boxShadow: "1px 1px 0px black"
+  };
+
+  const inputContainerStyle = {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "4px"
+  };
+
+  const inputStyle = {
+    border: "3px solid black",
+    padding: "8px 12px",
+    outline: "none",
+    boxShadow: "3px 3px 0px black",
+    fontSize: "0.85rem",
+    fontWeight: 700,
+    backgroundColor: "#f8fafc"
+  };
+
+  const modalCancelStyle = {
+    padding: "6px 12px",
+    fontSize: "0.75rem",
+    backgroundColor: "white",
+    boxShadow: "3px 3px 0px black"
+  };
+
+  const modalSaveStyle = {
+    padding: "6px 12px",
+    fontSize: "0.75rem",
+    backgroundColor: "var(--system-green)",
+    boxShadow: "3px 3px 0px black"
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <header style={{ marginBottom: "var(--space-lg)" }}>
+        <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>DEPLOY SERVICES</h2>
+        <p className="font-mono" style={{ fontSize: "0.85rem", color: "#475569", marginTop: "var(--space-xs)" }}>
+          Manage production servers, containers, port binding, and virtualized workloads.
+        </p>
+      </header>
+
+      {/* Deploy Stats Grid */}
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: "repeat(3, 1fr)", 
+        gap: "var(--space-md)",
+        marginBottom: "var(--space-lg)"
+      }}>
+        {/* Total Project Card */}
+        <div className="card" style={{ backgroundColor: "var(--system-blue)", display: "flex", flexDirection: "column", padding: "var(--space-sm) var(--space-md)" }}>
+          <span className="font-heading" style={{ fontSize: "0.75rem", color: "black", fontWeight: 700 }}>TOTAL PROJECTS</span>
+          <span className="font-display" style={{ fontSize: "2.8rem", lineHeight: "1" }}>{totalProjects}</span>
+        </div>
+        
+        {/* Running Card */}
+        <div className="card" style={{ backgroundColor: "var(--system-green)", display: "flex", flexDirection: "column", padding: "var(--space-sm) var(--space-md)" }}>
+          <span className="font-heading" style={{ fontSize: "0.75rem", color: "black", fontWeight: 700 }}>RUNNING</span>
+          <span className="font-display" style={{ fontSize: "2.8rem", lineHeight: "1" }}>{runningProjects}</span>
+        </div>
+
+        {/* Stopped Card */}
+        <div className="card" style={{ backgroundColor: "var(--system-red)", display: "flex", flexDirection: "column", padding: "var(--space-sm) var(--space-md)" }}>
+          <span className="font-heading" style={{ fontSize: "0.75rem", color: "black", fontWeight: 700 }}>STOPPED</span>
+          <span className="font-display" style={{ fontSize: "2.8rem", lineHeight: "1" }}>{stoppedProjects}</span>
+        </div>
+      </div>
+
+      {/* Deployed Projects List Section */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-md)" }}>
+        <h3 className="font-heading" style={{ fontSize: "1.4rem" }}>DEPLOYED APPLICATIONS</h3>
+        <button 
+          className="btn" 
+          onClick={() => setIsDeployOpen(true)}
+          style={{ 
+            backgroundColor: "var(--system-yellow)", 
+            padding: "6px 12px", 
+            fontSize: "0.75rem",
+            boxShadow: "3px 3px 0px black" 
+          }}
+        >
+          + NEW DEPLOYMENT
+        </button>
+      </div>
+
+      {/* Projects Grid */}
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+        gap: "var(--space-md)" 
+      }}>
+        {projects.map(proj => (
+          <div key={proj.id} className="card" style={{ 
+            backgroundColor: "white", 
+            padding: 0, 
+            display: "flex", 
+            flexDirection: "column",
+            minHeight: "230px",
+            overflow: "hidden"
+          }}>
+            {/* Top Indicator bar */}
+            <div style={{ 
+              backgroundColor: proj.status === "RUNNING" ? "var(--system-green)" : "var(--system-red)", 
+              borderBottom: "3px solid black", 
+              padding: "6px var(--space-sm)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center"
+            }}>
+              <span className="font-mono" style={{ fontSize: "0.6rem", fontWeight: 700, backgroundColor: "white", padding: "1px 4px", border: "1.5px solid black" }}>
+                PORT: {proj.port}
+              </span>
+              <span className="badge" style={{ 
+                backgroundColor: "black", 
+                color: proj.status === "RUNNING" ? "var(--system-green)" : "var(--system-red)",
+                borderColor: "black",
+                fontSize: "0.6rem",
+                padding: "0px 3px"
+              }}>
+                {proj.status}
+              </span>
+            </div>
+
+            {/* Content Body */}
+            <div style={{ padding: "var(--space-sm)", flex: 1, display: "flex", flexDirection: "column" }}>
+              <h4 className="font-heading" style={{ fontSize: "0.95rem", marginBottom: "var(--space-xs)", color: "black" }}>{proj.name}</h4>
+              
+              {/* Specs info grid */}
+              <div style={{ 
+                border: "2px solid black", 
+                backgroundColor: "var(--secondary-bg)", 
+                padding: "4px 6px", 
+                display: "flex", 
+                flexDirection: "column",
+                gap: "2px",
+                marginTop: "auto"
+              }} className="font-mono">
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
+                  <span>CPU USED:</span>
+                  <span style={{ fontWeight: 700 }}>{proj.cpu}%</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
+                  <span>RAM USED:</span>
+                  <span style={{ fontWeight: 700 }}>{proj.ram} MB</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
+                  <span>DISK USED:</span>
+                  <span style={{ fontWeight: 700 }}>
+                    {proj.storage >= 1000 ? `${(proj.storage / 1000).toFixed(1)} GB` : `${proj.storage} MB`}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Actions footer */}
+            <div style={{ 
+              borderTop: "3px solid black", 
+              padding: "4px 8px", 
+              backgroundColor: "var(--secondary-bg)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center"
+            }}>
+              {/* Stop/Start toggle button */}
+              <button 
+                className="btn"
+                onClick={() => handleToggleStatus(proj.id)}
+                style={{ 
+                  padding: "2px 6px", 
+                  fontSize: "0.65rem", 
+                  boxShadow: "1.5px 1.5px 0px black",
+                  backgroundColor: proj.status === "RUNNING" ? "var(--system-red)" : "var(--system-green)",
+                  color: "black",
+                  fontWeight: 700
+                }}
+              >
+                {proj.status === "RUNNING" ? "STOP" : "START"}
+              </button>
+
+              {/* Edit, logs, delete action buttons */}
+              <div style={{ display: "flex", gap: "4px" }}>
+                <button 
+                  className="btn"
+                  onClick={() => handleOpenEdit(proj)}
+                  style={{ 
+                    padding: "2px 5px", 
+                    fontSize: "0.6rem", 
+                    boxShadow: "1px 1px 0px black",
+                    backgroundColor: "white",
+                    color: "black"
+                  }}
+                >
+                  EDIT
+                </button>
+                <button 
+                  className="btn"
+                  onClick={() => handleOpenLogs(proj)}
+                  style={{ 
+                    padding: "2px 5px", 
+                    fontSize: "0.6rem", 
+                    boxShadow: "1px 1px 0px black",
+                    backgroundColor: "black",
+                    color: "white"
+                  }}
+                >
+                  LOGS
+                </button>
+                <button 
+                  className="btn"
+                  onClick={() => handleDelete(proj.id)}
+                  style={{ 
+                    padding: "2px 5px", 
+                    fontSize: "0.6rem", 
+                    boxShadow: "1px 1px 0px black",
+                    backgroundColor: "var(--system-red)",
+                    color: "black"
+                  }}
+                >
+                  DEL
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Deploy Modal */}
+      {isDeployOpen && (
+        <>
+          <div onClick={() => setIsDeployOpen(false)} style={overlayStyle} />
+          <div style={modalStyle}>
+            <div style={{ ...titleBarStyle, backgroundColor: "var(--system-yellow)" }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+                DEPLOY NEW SERVICE
+              </span>
+              <button onClick={() => setIsDeployOpen(false)} style={closeBtnStyle}>✕</button>
+            </div>
+            <form onSubmit={handleDeploy} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-sm)" }}>
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PROJECT NAME:</label>
+                <input 
+                  type="text" 
+                  value={projectName} 
+                  onChange={(e) => setProjectName(e.target.value)} 
+                  placeholder="e.g. BACKEND APIS" 
+                  required
+                  className="font-mono"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PORT BINDING:</label>
+                <input 
+                  type="number" 
+                  value={projectPort} 
+                  onChange={(e) => setProjectPort(e.target.value)} 
+                  placeholder="e.g. 5000" 
+                  required
+                  className="font-mono"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "var(--space-sm)" }}>
+                <button type="button" className="btn" onClick={() => setIsDeployOpen(false)} style={modalCancelStyle}>CANCEL</button>
+                <button type="submit" className="btn" style={modalSaveStyle}>DEPLOY SERVICE</button>
+              </div>
+            </form>
+          </div>
+        </>
+      )}
+
+      {/* Edit Modal */}
+      {isEditOpen && (
+        <>
+          <div onClick={() => setIsEditOpen(false)} style={overlayStyle} />
+          <div style={modalStyle}>
+            <div style={{ ...titleBarStyle, backgroundColor: "var(--system-blue)" }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+                EDIT SERVICE DETAILS
+              </span>
+              <button onClick={() => setIsEditOpen(false)} style={closeBtnStyle}>✕</button>
+            </div>
+            <form onSubmit={handleSaveEdit} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-sm)" }}>
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PROJECT NAME:</label>
+                <input 
+                  type="text" 
+                  value={editName} 
+                  onChange={(e) => setEditName(e.target.value)} 
+                  required
+                  className="font-mono"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PORT BINDING:</label>
+                <input 
+                  type="number" 
+                  value={editPort} 
+                  onChange={(e) => setEditPort(e.target.value)} 
+                  required
+                  className="font-mono"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "var(--space-sm)" }}>
+                <button type="button" className="btn" onClick={() => setIsEditOpen(false)} style={modalCancelStyle}>CANCEL</button>
+                <button type="submit" className="btn" style={modalSaveStyle}>SAVE CHANGES</button>
+              </div>
+            </form>
+          </div>
+        </>
+      )}
+
+      {/* Logs Modal */}
+      {isLogsOpen && loggingProject && (
+        <>
+          <div onClick={() => setIsLogsOpen(false)} style={overlayStyle} />
+          <div style={{ ...modalStyle, width: "550px" }}>
+            <div style={{ ...titleBarStyle, backgroundColor: "black", color: "white" }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "white", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+                LOGS: {loggingProject.name} (PORT {loggingProject.port})
+              </span>
+              <button onClick={() => setIsLogsOpen(false)} style={{ ...closeBtnStyle, color: "white", backgroundColor: "#334155" }}>✕</button>
+            </div>
+            <div style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-sm)" }}>
+              <div className="font-mono" style={{ 
+                backgroundColor: "#000000", 
+                color: "#22c55e", 
+                padding: "12px", 
+                fontSize: "0.7rem", 
+                height: "200px", 
+                overflowY: "auto",
+                border: "2px solid black",
+                boxShadow: "inset 0 0 10px rgba(0,0,0,0.8)",
+                lineHeight: 1.4,
+                whiteSpace: "pre-wrap"
+              }}>
+                {`[SYSTEM] 2026-06-16 22:30:00 - Initializing deployment core...
+[SYSTEM] 2026-06-16 22:30:01 - Binding service ${loggingProject.name} to port ${loggingProject.port}.
+[INFO] 2026-06-16 22:30:02 - Running engine configurations...
+${loggingProject.status === "RUNNING" ? `[INFO] 2026-06-16 22:30:04 - Connection established. Service listening on HTTP.
+[METRICS] 2026-06-16 22:31:15 - CPU Load: ${loggingProject.cpu}% | RAM: ${loggingProject.ram}MB
+[SYSTEM] 2026-06-16 22:35:00 - Healthcheck OK.` : `[WARN] 2026-06-16 22:31:00 - SIGTERM signal received. Stopping gracefully...
+[SYSTEM] 2026-06-16 22:31:02 - Service stopped.`}`}
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button className="btn" onClick={() => setIsLogsOpen(false)} style={{ ...modalCancelStyle, backgroundColor: "black", color: "white" }}>
+                  CLOSE
+                </button>
+              </div>
+            </div>
           </div>
         </>
       )}
