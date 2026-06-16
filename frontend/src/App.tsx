@@ -375,6 +375,31 @@ function PluginsView() {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeFilter, setActiveFilter] = useState<"ALL" | "INSTALLED">("ALL");
 
+  // Installed & Status states for interactive behavior
+  const [installedPlugins, setInstalledPlugins] = useState<Record<string, boolean>>({
+    zerotier: true,
+    tmux: true,
+    cloudflare: true,
+    docker: false,
+    nginx: false
+  });
+
+  const [pluginStatuses, setPluginStatuses] = useState<Record<string, string>>({
+    zerotier: "ONLINE",
+    tmux: "RUNNING",
+    cloudflare: "CONNECTED",
+    docker: "AVAILABLE",
+    nginx: "AVAILABLE"
+  });
+
+  // Modal & Configuration States
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [selectedPlugin, setSelectedPlugin] = useState<any>(null);
+  const [zerotierIdInput, setZerotierIdInput] = useState("8056c85e45c71a39");
+  const [currentZerotierId, setCurrentZerotierId] = useState("8056c85e45c71a39");
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+
   const pluginsData = [
     {
       id: "zerotier",
@@ -382,14 +407,17 @@ function PluginsView() {
       tagline: "Secure Virtual Network & Overlay P2P",
       description: "Creates virtual networks, bridging server workloads peer-to-peer over an encrypted overlay network. Ideal for secure multi-cloud or remote management.",
       color: "var(--system-blue)",
-      status: "ONLINE",
+      status: pluginStatuses.zerotier,
       badgeText: "v1.12.2",
+      installed: installedPlugins.zerotier,
       details: [
-        { label: "NETWORK ID", value: "8056c85e45c71a39" },
-        { label: "IP ADDRESS", value: "10.147.20.12" },
-        { label: "INTERFACE", value: "ztly2t4" }
+        { label: "NETWORK ID", value: currentZerotierId },
+        { label: "IP ADDRESS", value: pluginStatuses.zerotier === "ONLINE" ? "10.147.20.12" : "N/A" },
+        { label: "INTERFACE", value: pluginStatuses.zerotier === "ONLINE" ? "ztly2t4" : "N/A" }
       ],
-      actions: ["DISABLE", "CONFIGURE"]
+      actions: installedPlugins.zerotier 
+        ? [pluginStatuses.zerotier === "ONLINE" ? "DISABLE" : "ENABLE", "CONFIGURE"]
+        : ["INSTALL", "DOCS"]
     },
     {
       id: "tmux",
@@ -397,14 +425,17 @@ function PluginsView() {
       tagline: "Workspace Manager & Session Persistence",
       description: "Terminal session persistence and shell multiplexing. Keeps long-running CLI builds and scripts active in the background when ssh detaches.",
       color: "var(--system-yellow)",
-      status: "RUNNING",
+      status: pluginStatuses.tmux,
       badgeText: "v3.3a",
+      installed: installedPlugins.tmux,
       details: [
-        { label: "ACTIVE SESSIONS", value: "3 Sessions" },
+        { label: "ACTIVE SESSIONS", value: pluginStatuses.tmux === "RUNNING" ? "3 Sessions" : "0 Sessions" },
         { label: "DEFAULT SHELL", value: "/bin/zsh" },
-        { label: "CPU IMPACT", value: "0.2% Load" }
+        { label: "CPU IMPACT", value: pluginStatuses.tmux === "RUNNING" ? "0.2% Load" : "0.0% Load" }
       ],
-      actions: ["RESTART", "ATTACH"]
+      actions: installedPlugins.tmux
+        ? [pluginStatuses.tmux === "RUNNING" ? "RESTART" : "START", "ATTACH"]
+        : ["INSTALL", "DOCS"]
     },
     {
       id: "cloudflare",
@@ -412,21 +443,62 @@ function PluginsView() {
       tagline: "Secure Public Tunneling Without Open Ports",
       description: "Exposes local web services to the public internet securely. Proxies requests through Cloudflare's edge network without opening hardware firewall ports.",
       color: "var(--system-red)",
-      status: "CONNECTED",
+      status: pluginStatuses.cloudflare,
       badgeText: "v2024.1.0",
+      installed: installedPlugins.cloudflare,
       details: [
         { label: "TUNNEL NAME", value: "ndelok-prod-01" },
-        { label: "CONNECTED HOST", value: "ndelok.me" },
-        { label: "EDGE POPS", value: "CGK / SIN (2 PoPs)" }
+        { label: "CONNECTED HOST", value: pluginStatuses.cloudflare === "CONNECTED" ? "ndelok.me" : "N/A" },
+        { label: "EDGE POPS", value: pluginStatuses.cloudflare === "CONNECTED" ? "CGK / SIN (2 PoPs)" : "N/A" }
       ],
-      actions: ["DISCONNECT", "VIEW LOGS"]
+      actions: installedPlugins.cloudflare
+        ? [pluginStatuses.cloudflare === "CONNECTED" ? "DISCONNECT" : "CONNECT", "VIEW LOGS"]
+        : ["INSTALL", "DOCS"]
+    },
+    {
+      id: "docker",
+      name: "DOCKER ENGINE",
+      tagline: "Container Orchestration & Isolation",
+      description: "Manage containerized applications, network bridges, and volumes directly from your dashboard. Easily deploy web servers, databases, and microservices.",
+      color: "var(--system-green)",
+      status: pluginStatuses.docker,
+      badgeText: "v24.0.7",
+      installed: installedPlugins.docker,
+      details: [
+        { label: "CONTAINERS", value: pluginStatuses.docker === "RUNNING" ? "1 Active" : "0 Active" },
+        { label: "ENGINE STATUS", value: pluginStatuses.docker === "RUNNING" ? "ACTIVE" : "NOT INSTALLED" },
+        { label: "DOCKER COMPOSE", value: "Supported" }
+      ],
+      actions: installedPlugins.docker 
+        ? [pluginStatuses.docker === "RUNNING" ? "STOP" : "START", "CONFIGURE"] 
+        : ["INSTALL", "DOCS"]
+    },
+    {
+      id: "nginx",
+      name: "NGINX REVERSE PROXY",
+      tagline: "High-performance HTTP Server & Proxy",
+      description: "Configure reverse proxies, load balancing, and SSL termination. Secure your local services and route public web traffic with custom configurations.",
+      color: "oklch(0.8 0.15 200)",
+      status: pluginStatuses.nginx,
+      badgeText: "v1.25.3",
+      installed: installedPlugins.nginx,
+      details: [
+        { label: "ACTIVE SITES", value: pluginStatuses.nginx === "RUNNING" ? "2 Sites" : "0 Sites" },
+        { label: "PORT BINDING", value: "80, 443" },
+        { label: "SSL ENGINE", value: "Let's Encrypt" }
+      ],
+      actions: installedPlugins.nginx 
+        ? [pluginStatuses.nginx === "RUNNING" ? "STOP" : "START", "RELOAD"] 
+        : ["INSTALL", "DOCS"]
     }
   ];
 
   const filteredPlugins = pluginsData.filter(plugin => {
     const matchesSearch = plugin.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          plugin.tagline.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
+                          plugin.tagline.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          plugin.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesFilter = activeFilter === "ALL" || (activeFilter === "INSTALLED" && plugin.installed);
+    return matchesSearch && matchesFilter;
   });
 
   return (
@@ -564,6 +636,40 @@ function PluginsView() {
                 <button 
                   key={idx} 
                   className="btn" 
+                  onClick={() => {
+                    if (action === "CONFIGURE" && plugin.id === "zerotier") {
+                      setSelectedPlugin(plugin);
+                      setZerotierIdInput(currentZerotierId);
+                      setIsConfigOpen(true);
+                      setIsMinimized(false);
+                      setIsMaximized(false);
+                    } else if (action === "DISABLE" && plugin.id === "zerotier") {
+                      setPluginStatuses(prev => ({ ...prev, zerotier: "DISABLED" }));
+                    } else if (action === "ENABLE" && plugin.id === "zerotier") {
+                      setPluginStatuses(prev => ({ ...prev, zerotier: "ONLINE" }));
+                    } else if (action === "RESTART" && plugin.id === "tmux") {
+                      const oldStatus = pluginStatuses.tmux;
+                      setPluginStatuses(prev => ({ ...prev, tmux: "RESTARTING" }));
+                      setTimeout(() => {
+                        setPluginStatuses(prev => ({ ...prev, tmux: oldStatus }));
+                      }, 1000);
+                    } else if (action === "START" && plugin.id === "tmux") {
+                      setPluginStatuses(prev => ({ ...prev, tmux: "RUNNING" }));
+                    } else if (action === "DISCONNECT" && plugin.id === "cloudflare") {
+                      setPluginStatuses(prev => ({ ...prev, cloudflare: "DISCONNECTED" }));
+                    } else if (action === "CONNECT" && plugin.id === "cloudflare") {
+                      setPluginStatuses(prev => ({ ...prev, cloudflare: "CONNECTED" }));
+                    } else if (action === "INSTALL") {
+                      setInstalledPlugins(prev => ({ ...prev, [plugin.id]: true }));
+                      setPluginStatuses(prev => ({ ...prev, [plugin.id]: "RUNNING" }));
+                    } else if (action === "STOP") {
+                      setPluginStatuses(prev => ({ ...prev, [plugin.id]: "STOPPED" }));
+                    } else if (action === "START") {
+                      setPluginStatuses(prev => ({ ...prev, [plugin.id]: "RUNNING" }));
+                    } else {
+                      alert(`Action "${action}" triggered for ${plugin.name}`);
+                    }
+                  }}
                   style={{ 
                     padding: "2px 6px", 
                     fontSize: "0.65rem", 
@@ -579,6 +685,247 @@ function PluginsView() {
           </div>
         ))}
       </div>
+
+      {/* Configure Modal Popup */}
+      {isConfigOpen && selectedPlugin && (
+        <>
+          {/* Overlay background blur */}
+          {!isMinimized && !isMaximized && (
+            <div 
+              onClick={() => setIsConfigOpen(false)}
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0, 0, 0, 0.4)",
+                backdropFilter: "blur(2px)",
+                zIndex: 999
+              }}
+            />
+          )}
+
+          {/* Modal Container */}
+          <div 
+            style={
+              isMaximized 
+                ? {
+                    position: "fixed",
+                    top: "var(--space-md)",
+                    left: "var(--space-md)",
+                    right: "var(--space-md)",
+                    bottom: "var(--space-md)",
+                    backgroundColor: "white",
+                    border: "3px solid black",
+                    boxShadow: "8px 8px 0px black",
+                    zIndex: 1000,
+                    display: "flex",
+                    flexDirection: "column",
+                    transition: "all 0.15s ease-out"
+                  }
+                : isMinimized 
+                  ? {
+                      position: "fixed",
+                      bottom: "20px",
+                      right: "20px",
+                      width: "320px",
+                      backgroundColor: "white",
+                      border: "3px solid black",
+                      boxShadow: "4px 4px 0px black",
+                      zIndex: 1000,
+                      display: "flex",
+                      flexDirection: "column",
+                      transition: "all 0.15s ease-out"
+                    }
+                  : {
+                      position: "fixed",
+                      top: "50%",
+                      left: "50%",
+                      transform: "translate(-50%, -50%)",
+                      width: "420px",
+                      maxWidth: "90%",
+                      backgroundColor: "white",
+                      border: "3px solid black",
+                      boxShadow: "8px 8px 0px black",
+                      zIndex: 1000,
+                      display: "flex",
+                      flexDirection: "column",
+                      transition: "all 0.15s ease-out"
+                    }
+            }
+          >
+            {/* Title Bar */}
+            <div style={{
+              backgroundColor: selectedPlugin.color,
+              borderBottom: "3px solid black",
+              padding: "8px 12px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              cursor: "default"
+            }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+                CONFIGURE: {selectedPlugin.name}
+              </span>
+              
+              {/* Window Controls */}
+              <div style={{ display: "flex", gap: "6px" }}>
+                {/* Minimize Button */}
+                <button 
+                  onClick={() => setIsMinimized(!isMinimized)}
+                  title="Minimize"
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    border: "1.5px solid black",
+                    backgroundColor: "#fef08a",
+                    cursor: "pointer",
+                    fontSize: "0.8rem",
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                    boxShadow: "1px 1px 0px black"
+                  }}
+                >
+                  –
+                </button>
+                {/* Maximize Button */}
+                <button 
+                  onClick={() => {
+                    setIsMaximized(!isMaximized);
+                    setIsMinimized(false);
+                  }}
+                  title={isMaximized ? "Restore Down" : "Maximize"}
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    border: "1.5px solid black",
+                    backgroundColor: "#bbf7d0",
+                    cursor: "pointer",
+                    fontSize: "0.7rem",
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                    boxShadow: "1px 1px 0px black"
+                  }}
+                >
+                  {isMaximized ? "❐" : "⬜"}
+                </button>
+                {/* Close Button */}
+                <button 
+                  onClick={() => setIsConfigOpen(false)}
+                  title="Close"
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    border: "1.5px solid black",
+                    backgroundColor: "#fecaca",
+                    cursor: "pointer",
+                    fontSize: "0.7rem",
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                    boxShadow: "1px 1px 0px black"
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Window Content */}
+            {!isMinimized && (
+              <div style={{ padding: "var(--space-md)", flex: 1, display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+                <div>
+                  <h4 className="font-heading" style={{ fontSize: "0.85rem", marginBottom: "4px" }}>
+                    ZEROTIER NETWORK CONFIGURATION
+                  </h4>
+                  <p style={{ fontSize: "0.72rem", color: "#475569", lineHeight: 1.3 }}>
+                    Please enter the 16-character hexadecimal Network ID for Zerotier One to establish connection bridges.
+                  </p>
+                </div>
+
+                {/* Input Field */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>
+                    NETWORK ID:
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g. 8056c85e45c71a39" 
+                    value={zerotierIdInput}
+                    onChange={(e) => setZerotierIdInput(e.target.value.substring(0, 16))}
+                    className="font-mono"
+                    style={{
+                      border: "3px solid black",
+                      padding: "8px 12px",
+                      outline: "none",
+                      boxShadow: "4px 4px 0px black",
+                      fontSize: "0.85rem",
+                      fontWeight: 700,
+                      backgroundColor: "#f8fafc"
+                    }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px" }}>
+                    <span className="font-mono" style={{ fontSize: "0.6rem", color: "#64748b" }}>
+                      Length: {zerotierIdInput.length}/16
+                    </span>
+                    {zerotierIdInput.length !== 16 && (
+                      <span className="font-mono" style={{ fontSize: "0.6rem", color: "red", fontWeight: 700 }}>
+                        Must be exactly 16 chars
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "auto", paddingTop: "var(--space-sm)" }}>
+                  <button 
+                    className="btn" 
+                    onClick={() => setIsConfigOpen(false)}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: "0.75rem",
+                      backgroundColor: "white",
+                      boxShadow: "3px 3px 0px black"
+                    }}
+                  >
+                    CANCEL
+                  </button>
+                  <button 
+                    className="btn" 
+                    disabled={zerotierIdInput.length !== 16}
+                    onClick={() => {
+                      if (zerotierIdInput.length === 16) {
+                        setCurrentZerotierId(zerotierIdInput);
+                        setIsConfigOpen(false);
+                      }
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: "0.75rem",
+                      backgroundColor: zerotierIdInput.length === 16 ? "var(--system-green)" : "#e2e8f0",
+                      cursor: zerotierIdInput.length === 16 ? "pointer" : "not-allowed",
+                      boxShadow: "3px 3px 0px black",
+                      opacity: zerotierIdInput.length === 16 ? 1 : 0.6
+                    }}
+                  >
+                    SAVE ID
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
