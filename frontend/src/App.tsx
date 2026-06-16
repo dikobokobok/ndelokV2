@@ -954,6 +954,8 @@ function DeployView() {
   const [isDeployLogsFinished, setIsDeployLogsFinished] = useState(false);
   const [uploadType, setUploadType] = useState<"path" | "upload">("upload");
   const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
+  const [isDeployMinimized, setIsDeployMinimized] = useState(false);
+  const [isDeployMaximized, setIsDeployMaximized] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -1481,19 +1483,144 @@ function DeployView() {
       </div>
 
       {/* Deploy Modal */}
-      {isDeployOpen && (
-        <>
-          <div onClick={() => { if (deployStep === "form") setIsDeployOpen(false); }} style={overlayStyle} />
-          <div style={modalStyle}>
-            <div style={{ ...titleBarStyle, backgroundColor: "var(--system-yellow)" }}>
-              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
-                {deployStep === "form" ? "DEPLOY NEW SERVICE" : "DEPLOYMENT LOGS"}
-              </span>
-              {deployStep === "form" && (
-                <button onClick={() => setIsDeployOpen(false)} style={closeBtnStyle}>✕</button>
-              )}
-            </div>
+      {isDeployOpen && (() => {
+        const deployModalStyle = isDeployMaximized
+          ? {
+              position: "fixed" as const,
+              top: 0,
+              left: 0,
+              width: "100vw",
+              height: "100vh",
+              backgroundColor: "white",
+              border: "3px solid black",
+              boxShadow: "none",
+              zIndex: 1000,
+              display: "flex",
+              flexDirection: "column" as const,
+              transition: "all 0.15s ease-out"
+            }
+          : isDeployMinimized
+            ? {
+                position: "fixed" as const,
+                bottom: "20px",
+                right: "20px",
+                width: "320px",
+                backgroundColor: "white",
+                border: "3px solid black",
+                boxShadow: "4px 4px 0px black",
+                zIndex: 1000,
+                display: "flex",
+                flexDirection: "column" as const,
+                transition: "all 0.15s ease-out"
+              }
+            : {
+                ...modalStyle,
+                transition: "all 0.15s ease-out"
+              };
+        return (
+          <>
+            {!isDeployMinimized && !isDeployMaximized && (
+              <div onClick={() => { if (deployStep === "form") setIsDeployOpen(false); }} style={overlayStyle} />
+            )}
+            <div style={deployModalStyle}>
+              <div style={{ ...titleBarStyle, backgroundColor: "var(--system-yellow)", cursor: "default" }}>
+                <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+                  {deployStep === "form" ? "DEPLOY NEW SERVICE" : "DEPLOYMENT LOGS"}
+                </span>
+                
+                {/* Window Controls */}
+                <div style={{ display: "flex", gap: "6px" }}>
+                  {/* Minimize Button */}
+                  <button 
+                    type="button"
+                    onClick={() => setIsDeployMinimized(!isDeployMinimized)}
+                    title="Minimize"
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      border: "1.5px solid black",
+                      backgroundColor: "#fef08a",
+                      cursor: "pointer",
+                      fontSize: "0.8rem",
+                      fontWeight: "bold",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      boxShadow: "1px 1px 0px black"
+                    }}
+                  >
+                    –
+                  </button>
+                  {/* Maximize Button */}
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setIsDeployMaximized(!isDeployMaximized);
+                      setIsDeployMinimized(false);
+                    }}
+                    title={isDeployMaximized ? "Restore Down" : "Maximize"}
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      border: "1.5px solid black",
+                      backgroundColor: "#bbf7d0",
+                      cursor: "pointer",
+                      fontSize: "0.7rem",
+                      fontWeight: "bold",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      boxShadow: "1px 1px 0px black"
+                    }}
+                  >
+                    {isDeployMaximized ? "❐" : "⬜"}
+                  </button>
+                  {/* Close Button */}
+                  <button 
+                    type="button"
+                    disabled={deployStep === "logs" && !isDeployLogsFinished}
+                    onClick={() => {
+                      // Reset and close
+                      setProjectName("");
+                      setProjectPort("");
+                      setGithubLink("");
+                      setFolderPath("");
+                      setBuildCommand("npm install && npm run build");
+                      setStartCommand("npm run start");
+                      setDeployStep("form");
+                      setUploadedFiles([]);
+                      setUploadType("upload");
+                      setIsDeployOpen(false);
+                      setIsDeployMinimized(false);
+                      setIsDeployMaximized(false);
+                    }}
+                    title="Close"
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      border: "1.5px solid black",
+                      backgroundColor: (deployStep === "logs" && !isDeployLogsFinished) ? "#cbd5e1" : "#fecaca",
+                      cursor: (deployStep === "logs" && !isDeployLogsFinished) ? "not-allowed" : "pointer",
+                      fontSize: "0.7rem",
+                      fontWeight: "bold",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      boxShadow: "1px 1px 0px black",
+                      opacity: (deployStep === "logs" && !isDeployLogsFinished) ? 0.5 : 1
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {!isDeployMinimized && (
+                <>
 
             {deployStep === "form" ? (
               <form onSubmit={handleDeploy} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
@@ -1863,9 +1990,12 @@ function DeployView() {
                 </div>
               </div>
             )}
-          </div>
-        </>
-      )}
+                </>
+              )}
+            </div>
+          </>
+        );
+      })()}
 
       {/* Edit Modal */}
       {isEditOpen && (
