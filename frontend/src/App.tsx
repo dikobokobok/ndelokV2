@@ -53,16 +53,19 @@ export default function App() {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       {/* Sidebar */}
       <aside style={{ 
         width: "280px", 
+        flexShrink: 0,
+        height: "100%",
         borderRight: "var(--border-width) solid var(--ink)",
         padding: "var(--space-md)",
         display: "flex",
         flexDirection: "column",
         gap: "var(--space-md)",
-        backgroundColor: "var(--secondary-bg)"
+        backgroundColor: "var(--secondary-bg)",
+        overflowY: "auto"
       }}>
         <div style={{ padding: "var(--space-md) 0" }}>
           <h1 style={{ fontSize: "2.2rem", letterSpacing: "-0.5px", lineHeight: "1" }}>NDELOK</h1>
