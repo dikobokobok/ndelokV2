@@ -281,7 +281,8 @@ export default function App() {
         {currentView === "Plugins" && <PluginsView />}
         {currentView === "Deploy" && <DeployView />}
         {currentView === "Explorer" && <ExplorerView />}
-        {currentView !== "Dashboard" && currentView !== "Plugins" && currentView !== "Deploy" && currentView !== "Explorer" && (
+        {currentView === "Logs & Term" && <LogsTermView />}
+        {currentView !== "Dashboard" && currentView !== "Plugins" && currentView !== "Deploy" && currentView !== "Explorer" && currentView !== "Logs & Term" && (
           <div>
             <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>{currentView.toUpperCase()}</h2>
             <p className="font-mono" style={{ fontSize: "0.85rem", color: "#475569", marginTop: "var(--space-md)" }}>
@@ -3212,6 +3213,397 @@ function ExplorerView() {
           </>
         );
       })()}
+    </div>
+  );
+}
+
+interface LogItem {
+  timestamp: string;
+  level: "INFO" | "WARN" | "ERROR";
+  source: string;
+  message: string;
+}
+
+function LogsTermView() {
+  const [logs, setLogs] = useState<LogItem[]>([
+    { timestamp: "01:52:10", level: "INFO", source: "SYSTEM", message: "Ndelok daemon listener initialized successfully." },
+    { timestamp: "01:52:12", level: "INFO", source: "ZEROTIER", message: "Joined virtual overlay network 8056c85e45c71a39." },
+    { timestamp: "01:52:15", level: "INFO", source: "DOCKER", message: "Container database-postgres started on port 5432." },
+    { timestamp: "01:52:18", level: "WARN", source: "MONITOR", message: "CPU Core #2 temperature spiked above 78C." },
+    { timestamp: "01:52:20", level: "INFO", source: "CLOUDFLARE", message: "Tunnel connection established to PoP CGK." },
+    { timestamp: "01:52:25", level: "ERROR", source: "SYSTEM", message: "Failed healthcheck response on payment-system:3002." },
+    { timestamp: "01:52:26", level: "WARN", source: "PM2", message: "Process payment-system restarted automatically (exit code 1)." }
+  ]);
+
+  const [isStreaming, setIsStreaming] = useState(true);
+  const [logFilter, setLogFilter] = useState<"ALL" | "INFO" | "WARN" | "ERROR">("ALL");
+
+  const [terminalLines, setTerminalLines] = useState<string[]>([
+    "Ndelok Server Shell Terminal (Mock SSH Session)",
+    "System: ndelokOS v0.18.0 (kernel 6.1-amd64)",
+    "Authorized admin session active. Type 'help' for available commands.",
+    ""
+  ]);
+  const [commandInput, setCommandInput] = useState("");
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const terminalEndRef = useRef<HTMLDivElement>(null);
+  const terminalInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-scroll logs and terminal
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  useEffect(() => {
+    terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [terminalLines]);
+
+  // Real-time system log generator
+  useEffect(() => {
+    if (!isStreaming) return;
+
+    const logTemplates = [
+      { level: "INFO" as const, source: "MONITOR", message: "CPU load stabilized at 24%. Memory: 312MB / 2048MB." },
+      { level: "INFO" as const, source: "CLOUDFLARE", message: "Tunnel latency check PoP CGK: 12ms | PoP SIN: 24ms." },
+      { level: "INFO" as const, source: "ZEROTIER", message: "Peer transmission check: 12 active connections." },
+      { level: "WARN" as const, source: "SYSTEM", message: "Disk storage space usage reached 82% on root partition." },
+      { level: "INFO" as const, source: "DOCKER", message: "Garbage collection completed. Pruned 0 unused layers." },
+      { level: "ERROR" as const, source: "AUTHENTICATION", message: "Invalid API secret signature from IP 182.253.12.8." },
+      { level: "WARN" as const, source: "DATABASE", message: "Connection pool exhausted (100/100 connections in use) - scaling queue." }
+    ];
+
+    const interval = setInterval(() => {
+      const template = logTemplates[Math.floor(Math.random() * logTemplates.length)];
+      const now = new Date();
+      const timeStr = now.toTimeString().split(" ")[0];
+
+      setLogs(prev => [...prev, {
+        timestamp: timeStr,
+        level: template.level,
+        source: template.source,
+        message: template.message
+      }]);
+    }, 3500);
+
+    return () => clearInterval(interval);
+  }, [isStreaming]);
+
+  // Command History Navigation
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (commandHistory.length === 0) return;
+      const nextIndex = historyIndex > 0 ? historyIndex - 1 : 0;
+      setHistoryIndex(nextIndex);
+      setCommandInput(commandHistory[nextIndex]);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const nextIndex = historyIndex < commandHistory.length - 1 ? historyIndex + 1 : commandHistory.length;
+      setHistoryIndex(nextIndex);
+      if (nextIndex === commandHistory.length) {
+        setCommandInput("");
+      } else {
+        setCommandInput(commandHistory[nextIndex]);
+      }
+    }
+  };
+
+  // Command Executor
+  const handleCommandSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cmd = commandInput.trim();
+    if (!cmd) return;
+
+    const promptStr = `admin@ndelok-server:~$ ${cmd}`;
+    const newHistory = [...commandHistory, cmd];
+    setCommandHistory(newHistory);
+    setHistoryIndex(newHistory.length);
+
+    let responseLines: string[] = [];
+    const parts = cmd.split(" ");
+    const mainCommand = parts[0].toLowerCase();
+    const arg = parts.slice(1).join(" ");
+
+    switch (mainCommand) {
+      case "help":
+        responseLines = [
+          "Available commands:",
+          "  help              - List available commands",
+          "  clear             - Clear the screen",
+          "  neofetch          - Print system specifications and logo",
+          "  pm2 list / status - Show running daemon processes and specs",
+          "  uptime            - Show system execution uptime",
+          "  whoami            - Print active session user",
+          "  date              - Show current system date & time",
+          "  ls                - List mock directory workspace items",
+          "  cat [filename]    - Print contents of a text file"
+        ];
+        break;
+      case "clear":
+        setTerminalLines([]);
+        setCommandInput("");
+        return;
+      case "neofetch":
+        responseLines = [
+          "    .ndelok.     admin@ndelok-server",
+          "  `::++++++::`   -------------------",
+          "  ++:      :++   OS: ndelokOS v0.18.0 x86_64",
+          "  ++        ++   Host: Server-Prod-01",
+          "  ++:      :++   Kernel: Linux 6.1.0-9-amd64",
+          "  `::++++++::`   Uptime: 4 days, 5 hours, 32 mins",
+          "    .ndelok.     Shell: bash 5.1.16",
+          "                 CPU: Intel Xeon E5-2673 v4 (4) @ 2.3GHz",
+          "                 Memory: 312MB / 2048MB (15.2%)",
+          "                 Storage: 42GB / 100GB (42%)"
+        ];
+        break;
+      case "pm2":
+        if (arg === "list" || arg === "status" || arg === "") {
+          responseLines = [
+            "┌────┬────────────────────┬──────────┬────────┬──────────┬──────────┬──────────┐",
+            "│ id │ name               │ mode     │ status │ cpu      │ memory   │ uptime   │",
+            "├────┼────────────────────┼──────────┼────────┼──────────┼──────────┼──────────┤",
+            "│ 0  │ ndelok-dashboard   │ fork     │ online │ 2.5%     │ 128 MB   │ 4d 5h    │",
+            "│ 1  │ api-gateway        │ fork     │ online │ 1.1%     │ 96 MB    │ 4d 5h    │",
+            "│ 2  │ auth-service       │ fork     │ stopped│ 0%       │ 0 MB     │ 0        │",
+            "│ 3  │ postgres-db        │ fork     │ online │ 0.8%     │ 512 MB   │ 4d 5h    │",
+            "└────┴────────────────────┴──────────┴────────┴──────────┴──────────┴──────────┘"
+          ];
+        } else {
+          responseLines = [`pm2: command not recognized: "${arg}". Try "pm2 list".`];
+        }
+        break;
+      case "uptime":
+        responseLines = [" 01:53:10 up 4 days, 5 hours, 32 minutes, 1 user, load average: 0.12, 0.08, 0.05"];
+        break;
+      case "whoami":
+        responseLines = ["admin"];
+        break;
+      case "date":
+        responseLines = [new Date().toString()];
+        break;
+      case "ls":
+        responseLines = ["public/    src/    package.json    README.md    vite.config.ts"];
+        break;
+      case "cat":
+        if (!arg) {
+          responseLines = ["cat: missing file argument. Usage: cat [filename]"];
+        } else {
+          const fileMap: { [key: string]: string } = {
+            "readme.md": `# ndelok\nSistem monitoring server dengan antarmuka Neobrutalist.`,
+            "package.json": `{\n  "name": "ndelok",\n  "version": "0.18.0",\n  "type": "module"\n}`,
+            "vite.config.ts": `import { defineConfig } from "vite";\nexport default defineConfig({});`
+          };
+          const normalizedArg = arg.toLowerCase();
+          if (fileMap[normalizedArg]) {
+            responseLines = fileMap[normalizedArg].split("\n");
+          } else {
+            responseLines = [`cat: ${arg}: No such file in root directory`];
+          }
+        }
+        break;
+      default:
+        responseLines = [
+          `bash: ${mainCommand}: command not found.`,
+          "Type 'help' to see list of valid commands."
+        ];
+    }
+
+    setTerminalLines(prev => [...prev, promptStr, ...responseLines, ""]);
+    setCommandInput("");
+  };
+
+  // Log Filtering
+  const filteredLogs = logs.filter(log => {
+    if (logFilter === "ALL") return true;
+    return log.level === logFilter;
+  });
+
+  // Styles
+  const containerStyle = {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "var(--space-md)",
+    height: "calc(100vh - 190px)",
+    marginTop: "var(--space-md)"
+  };
+
+  const consoleBoxStyle = {
+    backgroundColor: "white",
+    border: "3px solid black",
+    boxShadow: "8px 8px 0px black",
+    display: "flex",
+    flexDirection: "column" as const,
+    overflow: "hidden" as const
+  };
+
+  const consoleHeaderStyle = (color: string) => ({
+    backgroundColor: color,
+    borderBottom: "3px solid black",
+    padding: "8px 12px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center"
+  });
+
+  const streamBodyStyle = {
+    flex: 1,
+    backgroundColor: "#090d16",
+    padding: "12px",
+    overflowY: "auto" as const,
+    lineHeight: 1.4
+  };
+
+  const toolbarStyle = {
+    display: "flex",
+    gap: "6px",
+    alignItems: "center"
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <header style={{ marginBottom: "var(--space-lg)" }}>
+        <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>LOGS & TERMINAL</h2>
+        <p className="font-mono" style={{ fontSize: "0.85rem", color: "#475569", marginTop: "var(--space-xs)" }}>
+          Monitor live system logs stream and execute server operations inside the interactive SSH shell console.
+        </p>
+      </header>
+
+      {/* Main split grid */}
+      <div style={containerStyle}>
+        
+        {/* Left Pane: Log Stream */}
+        <div style={consoleBoxStyle}>
+          <div style={consoleHeaderStyle("var(--system-green)")}>
+            <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+              SYSTEM LOG STREAM
+            </span>
+            <div style={toolbarStyle}>
+              {/* Filter Select Buttons */}
+              <div style={{ display: "flex", border: "2px solid black", boxShadow: "1px 1px 0px black", backgroundColor: "white" }}>
+                {(["ALL", "INFO", "WARN", "ERROR"] as const).map(f => (
+                  <button 
+                    key={f}
+                    onClick={() => setLogFilter(f)}
+                    style={{
+                      padding: "2px 6px",
+                      fontSize: "0.6rem",
+                      fontWeight: "bold",
+                      border: "none",
+                      borderRight: f !== "ERROR" ? "1.5px solid black" : "none",
+                      backgroundColor: logFilter === f ? "var(--system-blue)" : "white",
+                      cursor: "pointer"
+                    }}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+
+              {/* Pause/Resume button */}
+              <button 
+                className="btn"
+                onClick={() => setIsStreaming(!isStreaming)}
+                style={{
+                  padding: "2px 6px",
+                  fontSize: "0.6rem",
+                  backgroundColor: isStreaming ? "#fef08a" : "var(--system-green)",
+                  boxShadow: "1.5px 1.5px 0px black"
+                }}
+              >
+                {isStreaming ? "PAUSE" : "RESUME"}
+              </button>
+
+              {/* Clear button */}
+              <button 
+                className="btn"
+                onClick={() => setLogs([])}
+                style={{
+                  padding: "2px 6px",
+                  fontSize: "0.6rem",
+                  backgroundColor: "#fecaca",
+                  boxShadow: "1.5px 1.5px 0px black"
+                }}
+              >
+                CLEAR
+              </button>
+            </div>
+          </div>
+
+          <div style={streamBodyStyle} className="font-mono">
+            {filteredLogs.length === 0 ? (
+              <div style={{ color: "#475569", textAlign: "center", padding: "20px", fontSize: "0.75rem" }}>
+                No logs generated yet or logs cleared.
+              </div>
+            ) : (
+              filteredLogs.map((log, idx) => (
+                <div key={idx} style={{ display: "flex", gap: "8px", borderBottom: "1px solid #141b2d", padding: "4px 0", fontSize: "0.7rem", alignItems: "flex-start" }}>
+                  <span style={{ color: "#64748b", flexShrink: 0 }}>[{log.timestamp}]</span>
+                  <span style={{ 
+                    color: log.level === "ERROR" ? "var(--system-red)" : log.level === "WARN" ? "var(--system-yellow)" : "var(--system-green)",
+                    fontWeight: "bold",
+                    flexShrink: 0
+                  }}>[{log.level}]</span>
+                  <span style={{ color: "#38bdf8", fontWeight: 700, flexShrink: 0 }}>[{log.source}]</span>
+                  <span style={{ color: "#e2e8f0" }}>{log.message}</span>
+                </div>
+              ))
+            )}
+            <div ref={logsEndRef} />
+          </div>
+        </div>
+
+        {/* Right Pane: SSH Terminal Console */}
+        <div style={consoleBoxStyle} onClick={() => terminalInputRef.current?.focus()}>
+          <div style={consoleHeaderStyle("var(--system-blue)")}>
+            <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+              SSH TERMINAL CONSOLE
+            </span>
+            <div className="badge font-mono" style={{ fontSize: "0.6rem", backgroundColor: "black", color: "white" }}>
+              admin@ndelok-server
+            </div>
+          </div>
+
+          <div style={{ ...streamBodyStyle, backgroundColor: "#000000", padding: "16px" }} className="font-mono">
+            <div style={{ fontSize: "0.7rem", color: "#a7f3d0", whiteSpace: "pre-wrap", overflowX: "auto" }}>
+              {terminalLines.map((line, idx) => (
+                <div key={idx} style={{ minHeight: "1.2em" }}>{line}</div>
+              ))}
+
+              <form onSubmit={handleCommandSubmit} style={{ display: "flex", alignItems: "center", marginTop: "4px" }}>
+                <span style={{ color: "#38bdf8", marginRight: "6px", flexShrink: 0 }}>admin@ndelok-server:~$</span>
+                <input 
+                  type="text" 
+                  value={commandInput} 
+                  onChange={(e) => setCommandInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  ref={terminalInputRef}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    outline: "none",
+                    color: "#22c55e",
+                    fontFamily: "var(--font-space-mono), monospace",
+                    fontSize: "0.7rem",
+                    flex: 1,
+                    caretColor: "#22c55e",
+                    padding: 0
+                  }}
+                  autoFocus
+                />
+              </form>
+            </div>
+            <div ref={terminalEndRef} />
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }
