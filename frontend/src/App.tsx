@@ -932,24 +932,34 @@ function PluginsView() {
 }
 
 function DeployView() {
-  const [projects, setProjects] = useState([
-    { id: "p1", name: "NDELOK DASHBOARD", port: 1234, status: "RUNNING", cpu: 2.5, ram: 128, storage: 420 },
-    { id: "p2", name: "API GATEWAY", port: 8080, status: "RUNNING", cpu: 1.1, ram: 96, storage: 210 },
-    { id: "p3", name: "AUTH SERVICE", port: 8081, status: "STOPPED", cpu: 0, ram: 0, storage: 180 },
-    { id: "p4", name: "DATABASE POSTGRES", port: 5432, status: "RUNNING", cpu: 0.8, ram: 512, storage: 14200 },
-    { id: "p5", name: "PAYMENT SYSTEM", port: 3002, status: "STOPPED", cpu: 0, ram: 0, storage: 350 }
+  const [projects, setProjects] = useState<any[]>([
+    { id: "p1", name: "NDELOK DASHBOARD", port: "1234", status: "RUNNING", cpu: 2.5, ram: 128, storage: 420, deployMethod: "github", githubLink: "https://github.com/dikobokobok/ndelokV2.git", folderPath: "", buildCommand: "npm install && npm run build", startCommand: "npm run dev" },
+    { id: "p2", name: "API GATEWAY", port: "8080", status: "RUNNING", cpu: 1.1, ram: 96, storage: 210, deployMethod: "github", githubLink: "https://github.com/dikobokobok/gateway.git", folderPath: "", buildCommand: "npm install", startCommand: "node index.js" },
+    { id: "p3", name: "AUTH SERVICE", port: "8081", status: "STOPPED", cpu: 0, ram: 0, storage: 180, deployMethod: "folder", githubLink: "", folderPath: "/var/www/auth", buildCommand: "npm install && npm run build", startCommand: "node dist/auth.js" },
+    { id: "p4", name: "DATABASE POSTGRES", port: "5432", status: "RUNNING", cpu: 0.8, ram: 512, storage: 14200, deployMethod: "folder", githubLink: "", folderPath: "C:\\postgres\\data", buildCommand: "", startCommand: "pg_ctl start" },
+    { id: "p5", name: "PAYMENT SYSTEM", port: "3002", status: "STOPPED", cpu: 0, ram: 0, storage: 350, deployMethod: "github", githubLink: "https://github.com/payments/processor.git", folderPath: "", buildCommand: "pip install -r requirements.txt", startCommand: "python app.py" }
   ]);
 
   // States for Deploy Modal
   const [isDeployOpen, setIsDeployOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projectPort, setProjectPort] = useState("");
+  const [deployMethod, setDeployMethod] = useState<"github" | "folder">("github");
+  const [githubLink, setGithubLink] = useState("");
+  const [folderPath, setFolderPath] = useState("");
+  const [buildCommand, setBuildCommand] = useState("npm install && npm run build");
+  const [startCommand, setStartCommand] = useState("npm run start");
   
   // States for Edit Modal
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editPort, setEditPort] = useState("");
+  const [editMethod, setEditMethod] = useState<"github" | "folder">("github");
+  const [editGithubLink, setEditGithubLink] = useState("");
+  const [editFolderPath, setEditFolderPath] = useState("");
+  const [editBuildCommand, setEditBuildCommand] = useState("");
+  const [editStartCommand, setEditStartCommand] = useState("");
 
   // States for Logs Modal
   const [isLogsOpen, setIsLogsOpen] = useState(false);
@@ -1004,22 +1014,38 @@ function DeployView() {
     const newProj = {
       id: `p-${Date.now()}`,
       name: projectName.toUpperCase(),
-      port: parseInt(projectPort),
+      port: projectPort,
       status: "RUNNING",
       cpu: parseFloat((Math.random() * 4 + 1).toFixed(1)),
       ram: Math.floor(Math.random() * 150 + 64),
-      storage: Math.floor(Math.random() * 500 + 100)
+      storage: Math.floor(Math.random() * 500 + 100),
+      deployMethod,
+      githubLink: deployMethod === "github" ? githubLink : "",
+      folderPath: deployMethod === "folder" ? folderPath : "",
+      buildCommand,
+      startCommand
     };
     setProjects(prev => [...prev, newProj]);
+    
+    // Reset inputs
     setProjectName("");
     setProjectPort("");
+    setGithubLink("");
+    setFolderPath("");
+    setBuildCommand("npm install && npm run build");
+    setStartCommand("npm run start");
     setIsDeployOpen(false);
   };
 
   const handleOpenEdit = (proj: any) => {
     setEditingId(proj.id);
     setEditName(proj.name);
-    setEditPort(proj.port.toString());
+    setEditPort(proj.port);
+    setEditMethod(proj.deployMethod || "github");
+    setEditGithubLink(proj.githubLink || "");
+    setEditFolderPath(proj.folderPath || "");
+    setEditBuildCommand(proj.buildCommand || "");
+    setEditStartCommand(proj.startCommand || "");
     setIsEditOpen(true);
   };
 
@@ -1031,7 +1057,12 @@ function DeployView() {
         return {
           ...p,
           name: editName.toUpperCase(),
-          port: parseInt(editPort)
+          port: editPort,
+          deployMethod: editMethod,
+          githubLink: editMethod === "github" ? editGithubLink : "",
+          folderPath: editMethod === "folder" ? editFolderPath : "",
+          buildCommand: editBuildCommand,
+          startCommand: editStartCommand
         };
       }
       return p;
@@ -1062,8 +1093,10 @@ function DeployView() {
     top: "50%",
     left: "50%",
     transform: "translate(-50%, -50%)",
-    width: "400px",
+    width: "460px",
     maxWidth: "95%",
+    maxHeight: "85vh",
+    overflowY: "auto" as const,
     backgroundColor: "white",
     border: "3px solid black",
     boxShadow: "8px 8px 0px black",
@@ -1203,7 +1236,7 @@ function DeployView() {
               alignItems: "center"
             }}>
               <span className="font-mono" style={{ fontSize: "0.6rem", fontWeight: 700, backgroundColor: "white", padding: "1px 4px", border: "1.5px solid black" }}>
-                PORT: {proj.port}
+                BIND: {proj.port}
               </span>
               <span className="badge" style={{ 
                 backgroundColor: "black", 
@@ -1218,7 +1251,14 @@ function DeployView() {
 
             {/* Content Body */}
             <div style={{ padding: "var(--space-sm)", flex: 1, display: "flex", flexDirection: "column" }}>
-              <h4 className="font-heading" style={{ fontSize: "0.95rem", marginBottom: "var(--space-xs)", color: "black" }}>{proj.name}</h4>
+              <h4 className="font-heading" style={{ fontSize: "0.95rem", marginBottom: "var(--space-xs)", color: "black", display: "flex", alignItems: "center", gap: "6px" }}>
+                {proj.name}
+                {proj.deployMethod === "github" ? (
+                  <span className="badge" style={{ fontSize: "0.5rem", padding: "0px 3px", backgroundColor: "var(--system-blue)", color: "black", borderColor: "black" }} title={proj.githubLink}>GH</span>
+                ) : (
+                  <span className="badge" style={{ fontSize: "0.5rem", padding: "0px 3px", backgroundColor: "#cbd5e1", color: "black", borderColor: "black" }} title={proj.folderPath}>DIR</span>
+                )}
+              </h4>
               
               {/* Specs info grid */}
               <div style={{ 
@@ -1331,7 +1371,8 @@ function DeployView() {
               </span>
               <button onClick={() => setIsDeployOpen(false)} style={closeBtnStyle}>✕</button>
             </div>
-            <form onSubmit={handleDeploy} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-sm)" }}>
+            <form onSubmit={handleDeploy} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+              {/* Project Name */}
               <div style={inputContainerStyle}>
                 <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PROJECT NAME:</label>
                 <input 
@@ -1344,19 +1385,116 @@ function DeployView() {
                   style={inputStyle}
                 />
               </div>
+
+              {/* Port / Domain Form */}
               <div style={inputContainerStyle}>
-                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PORT BINDING:</label>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PORT / DOMAIN:</label>
                 <input 
-                  type="number" 
+                  type="text" 
                   value={projectPort} 
                   onChange={(e) => setProjectPort(e.target.value)} 
-                  placeholder="e.g. 5000" 
+                  placeholder="e.g. 5000 or my-app.ndelok.me" 
                   required
                   className="font-mono"
                   style={inputStyle}
                 />
               </div>
-              <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "var(--space-sm)" }}>
+
+              {/* Toggle Source Method */}
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>IMPORT METHOD:</label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button 
+                    type="button"
+                    className="btn" 
+                    onClick={() => setDeployMethod("github")}
+                    style={{
+                      flex: 1,
+                      padding: "6px",
+                      fontSize: "0.7rem",
+                      backgroundColor: deployMethod === "github" ? "var(--system-blue)" : "white",
+                      boxShadow: deployMethod === "github" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                      transform: deployMethod === "github" ? "translate(1px, 1px)" : "none"
+                    }}
+                  >
+                    GITHUB REPO
+                  </button>
+                  <button 
+                    type="button"
+                    className="btn" 
+                    onClick={() => setDeployMethod("folder")}
+                    style={{
+                      flex: 1,
+                      padding: "6px",
+                      fontSize: "0.7rem",
+                      backgroundColor: deployMethod === "folder" ? "var(--system-blue)" : "white",
+                      boxShadow: deployMethod === "folder" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                      transform: deployMethod === "folder" ? "translate(1px, 1px)" : "none"
+                    }}
+                  >
+                    LOCAL FOLDER
+                  </button>
+                </div>
+              </div>
+
+              {/* Github Link / Folder path conditionally */}
+              {deployMethod === "github" ? (
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>GITHUB SOURCE LINK:</label>
+                  <input 
+                    type="text" 
+                    value={githubLink} 
+                    onChange={(e) => setGithubLink(e.target.value)} 
+                    placeholder="e.g. https://github.com/username/project.git" 
+                    required={deployMethod === "github"}
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
+              ) : (
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>LOCAL FILE FOLDER PATH:</label>
+                  <input 
+                    type="text" 
+                    value={folderPath} 
+                    onChange={(e) => setFolderPath(e.target.value)} 
+                    placeholder="e.g. C:\projects\my-app or /var/www/my-app" 
+                    required={deployMethod === "folder"}
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
+              )}
+
+              {/* Build install execution form */}
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>BUILD INSTALL EXECUTION COMMAND:</label>
+                <input 
+                  type="text" 
+                  value={buildCommand} 
+                  onChange={(e) => setBuildCommand(e.target.value)} 
+                  placeholder="e.g. npm install && npm run build" 
+                  className="font-mono"
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Daemon start sequence form */}
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>DAEMON START SEQUENCE COMMAND:</label>
+                <input 
+                  type="text" 
+                  value={startCommand} 
+                  onChange={(e) => setStartCommand(e.target.value)} 
+                  placeholder="e.g. npm run start or pm2 start app.js" 
+                  required
+                  className="font-mono"
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Modal Buttons */}
+              <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "var(--space-xs)" }}>
                 <button type="button" className="btn" onClick={() => setIsDeployOpen(false)} style={modalCancelStyle}>CANCEL</button>
                 <button type="submit" className="btn" style={modalSaveStyle}>DEPLOY SERVICE</button>
               </div>
@@ -1377,7 +1515,8 @@ function DeployView() {
               </span>
               <button onClick={() => setIsEditOpen(false)} style={closeBtnStyle}>✕</button>
             </div>
-            <form onSubmit={handleSaveEdit} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-sm)" }}>
+            <form onSubmit={handleSaveEdit} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+              {/* Project Name */}
               <div style={inputContainerStyle}>
                 <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PROJECT NAME:</label>
                 <input 
@@ -1389,10 +1528,12 @@ function DeployView() {
                   style={inputStyle}
                 />
               </div>
+
+              {/* Port / Domain */}
               <div style={inputContainerStyle}>
-                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PORT BINDING:</label>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PORT / DOMAIN:</label>
                 <input 
-                  type="number" 
+                  type="text" 
                   value={editPort} 
                   onChange={(e) => setEditPort(e.target.value)} 
                   required
@@ -1400,7 +1541,100 @@ function DeployView() {
                   style={inputStyle}
                 />
               </div>
-              <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "var(--space-sm)" }}>
+
+              {/* Toggle Source Method */}
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>IMPORT METHOD:</label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button 
+                    type="button"
+                    className="btn" 
+                    onClick={() => setEditMethod("github")}
+                    style={{
+                      flex: 1,
+                      padding: "6px",
+                      fontSize: "0.7rem",
+                      backgroundColor: editMethod === "github" ? "var(--system-blue)" : "white",
+                      boxShadow: editMethod === "github" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                      transform: editMethod === "github" ? "translate(1px, 1px)" : "none"
+                    }}
+                  >
+                    GITHUB REPO
+                  </button>
+                  <button 
+                    type="button"
+                    className="btn" 
+                    onClick={() => setEditMethod("folder")}
+                    style={{
+                      flex: 1,
+                      padding: "6px",
+                      fontSize: "0.7rem",
+                      backgroundColor: editMethod === "folder" ? "var(--system-blue)" : "white",
+                      boxShadow: editMethod === "folder" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                      transform: editMethod === "folder" ? "translate(1px, 1px)" : "none"
+                    }}
+                  >
+                    LOCAL FOLDER
+                  </button>
+                </div>
+              </div>
+
+              {/* Github Link / Folder path conditionally */}
+              {editMethod === "github" ? (
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>GITHUB SOURCE LINK:</label>
+                  <input 
+                    type="text" 
+                    value={editGithubLink} 
+                    onChange={(e) => setEditGithubLink(e.target.value)} 
+                    placeholder="e.g. https://github.com/username/project.git" 
+                    required={editMethod === "github"}
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
+              ) : (
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>LOCAL FILE FOLDER PATH:</label>
+                  <input 
+                    type="text" 
+                    value={editFolderPath} 
+                    onChange={(e) => setEditFolderPath(e.target.value)} 
+                    placeholder="e.g. C:\projects\my-app" 
+                    required={editMethod === "folder"}
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
+              )}
+
+              {/* Build install execution form */}
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>BUILD INSTALL EXECUTION COMMAND:</label>
+                <input 
+                  type="text" 
+                  value={editBuildCommand} 
+                  onChange={(e) => setEditBuildCommand(e.target.value)} 
+                  className="font-mono"
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Daemon start sequence form */}
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>DAEMON START SEQUENCE COMMAND:</label>
+                <input 
+                  type="text" 
+                  value={editStartCommand} 
+                  onChange={(e) => setEditStartCommand(e.target.value)} 
+                  required
+                  className="font-mono"
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Modal Buttons */}
+              <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "var(--space-xs)" }}>
                 <button type="button" className="btn" onClick={() => setIsEditOpen(false)} style={modalCancelStyle}>CANCEL</button>
                 <button type="submit" className="btn" style={modalSaveStyle}>SAVE CHANGES</button>
               </div>
@@ -1413,7 +1647,7 @@ function DeployView() {
       {isLogsOpen && loggingProject && (
         <>
           <div onClick={() => setIsLogsOpen(false)} style={overlayStyle} />
-          <div style={{ ...modalStyle, width: "550px" }}>
+          <div style={{ ...modalStyle, width: "550px", maxHeight: "85vh", overflowY: "auto" }}>
             <div style={{ ...titleBarStyle, backgroundColor: "black", color: "white" }}>
               <span className="font-heading" style={{ fontSize: "0.85rem", color: "white", display: "flex", alignItems: "center", gap: "8px" }}>
                 <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
@@ -1422,22 +1656,36 @@ function DeployView() {
               <button onClick={() => setIsLogsOpen(false)} style={{ ...closeBtnStyle, color: "white", backgroundColor: "#334155" }}>✕</button>
             </div>
             <div style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-sm)" }}>
+              {/* Build & Daemon configurations description */}
+              <div style={{ border: "2px solid black", padding: "6px 10px", backgroundColor: "var(--secondary-bg)", fontSize: "0.65rem" }} className="font-mono">
+                <div><strong>DEPLOY METHOD:</strong> {loggingProject.deployMethod?.toUpperCase() || "N/A"}</div>
+                {loggingProject.deployMethod === "github" ? (
+                  <div style={{ wordBreak: "break-all" }}><strong>GITHUB LINK:</strong> {loggingProject.githubLink}</div>
+                ) : (
+                  <div><strong>FOLDER PATH:</strong> {loggingProject.folderPath || "N/A"}</div>
+                )}
+                <div><strong>BUILD CMD:</strong> {loggingProject.buildCommand || "N/A"}</div>
+                <div><strong>START CMD:</strong> {loggingProject.startCommand || "N/A"}</div>
+              </div>
+
               <div className="font-mono" style={{ 
                 backgroundColor: "#000000", 
                 color: "#22c55e", 
                 padding: "12px", 
                 fontSize: "0.7rem", 
-                height: "200px", 
+                height: "180px", 
                 overflowY: "auto",
                 border: "2px solid black",
                 boxShadow: "inset 0 0 10px rgba(0,0,0,0.8)",
                 lineHeight: 1.4,
                 whiteSpace: "pre-wrap"
               }}>
-                {`[SYSTEM] 2026-06-16 22:30:00 - Initializing deployment core...
-[SYSTEM] 2026-06-16 22:30:01 - Binding service ${loggingProject.name} to port ${loggingProject.port}.
-[INFO] 2026-06-16 22:30:02 - Running engine configurations...
-${loggingProject.status === "RUNNING" ? `[INFO] 2026-06-16 22:30:04 - Connection established. Service listening on HTTP.
+                {`[SYSTEM] 2026-06-16 22:30:00 - Initializing deployment core from ${loggingProject.deployMethod}...
+[SYSTEM] 2026-06-16 22:30:01 - Pulling codebase source...
+[SYSTEM] 2026-06-16 22:30:02 - Executing build installer: "${loggingProject.buildCommand || "N/A"}"
+[SYSTEM] 2026-06-16 22:30:03 - Starting daemon sequence: "${loggingProject.startCommand || "N/A"}"
+[SYSTEM] 2026-06-16 22:30:04 - Binding service ${loggingProject.name} to port/domain ${loggingProject.port}.
+${loggingProject.status === "RUNNING" ? `[INFO] 2026-06-16 22:30:05 - Connection established. Service listening on HTTP.
 [METRICS] 2026-06-16 22:31:15 - CPU Load: ${loggingProject.cpu}% | RAM: ${loggingProject.ram}MB
 [SYSTEM] 2026-06-16 22:35:00 - Healthcheck OK.` : `[WARN] 2026-06-16 22:31:00 - SIGTERM signal received. Stopping gracefully...
 [SYSTEM] 2026-06-16 22:31:02 - Service stopped.`}`}
