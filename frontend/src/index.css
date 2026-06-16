@@ -121,3 +121,8 @@ h1, h2, h3, h4, h5, h6 {
   padding: 2px var(--space-sm);
   text-transform: uppercase;
 }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}

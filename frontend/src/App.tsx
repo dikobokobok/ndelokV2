@@ -949,6 +949,9 @@ function DeployView() {
   const [folderPath, setFolderPath] = useState("");
   const [buildCommand, setBuildCommand] = useState("npm install && npm run build");
   const [startCommand, setStartCommand] = useState("npm run start");
+  const [deployStep, setDeployStep] = useState<"form" | "logs">("form");
+  const [deployLogs, setDeployLogs] = useState<string[]>([]);
+  const [isDeployLogsFinished, setIsDeployLogsFinished] = useState(false);
   
   // States for Edit Modal
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -1011,6 +1014,11 @@ function DeployView() {
   const handleDeploy = (e: React.FormEvent) => {
     e.preventDefault();
     if (!projectName || !projectPort) return;
+
+    setDeployStep("logs");
+    setDeployLogs([]);
+    setIsDeployLogsFinished(false);
+
     const newProj = {
       id: `p-${Date.now()}`,
       name: projectName.toUpperCase(),
@@ -1025,16 +1033,31 @@ function DeployView() {
       buildCommand,
       startCommand
     };
+
     setProjects(prev => [...prev, newProj]);
-    
-    // Reset inputs
-    setProjectName("");
-    setProjectPort("");
-    setGithubLink("");
-    setFolderPath("");
-    setBuildCommand("npm install && npm run build");
-    setStartCommand("npm run start");
-    setIsDeployOpen(false);
+
+    const logSequence = [
+      `[NDELOK-DEPLOY] 01:32:45 - Initializing deployment sequence for "${projectName.toUpperCase()}"...`,
+      `[NDELOK-DEPLOY] 01:32:46 - Import method: ${deployMethod === "github" ? `GITHUB REPOSITORY (${githubLink})` : `LOCAL FILE FOLDER (${folderPath})`}`,
+      `[NDELOK-DEPLOY] 01:32:47 - Pulling codebase source files...`,
+      `[NDELOK-DEPLOY] 01:32:48 - Executing build command: "${buildCommand || "N/A"}"`,
+      `[NDELOK-DEPLOY] 01:32:49 - Build command completed successfully. 0 errors, 2 warnings.`,
+      `[NDELOK-DEPLOY] 01:32:50 - Spawning daemon start sequence command: "${startCommand}"`,
+      `[NDELOK-DEPLOY] 01:32:51 - Service is online and successfully bound to port/domain ${projectPort}!`,
+      `[SUCCESS] 01:32:51 - Deployment completed. Service is fully operational.`
+    ];
+
+    let currentLogIndex = 0;
+    const interval = setInterval(() => {
+      if (currentLogIndex < logSequence.length) {
+        const nextLine = logSequence[currentLogIndex];
+        setDeployLogs(prev => [...prev, nextLine]);
+        currentLogIndex++;
+      } else {
+        clearInterval(interval);
+        setIsDeployLogsFinished(true);
+      }
+    }, 600);
   };
 
   const handleOpenEdit = (proj: any) => {
@@ -1362,143 +1385,213 @@ function DeployView() {
       {/* Deploy Modal */}
       {isDeployOpen && (
         <>
-          <div onClick={() => setIsDeployOpen(false)} style={overlayStyle} />
+          <div onClick={() => { if (deployStep === "form") setIsDeployOpen(false); }} style={overlayStyle} />
           <div style={modalStyle}>
             <div style={{ ...titleBarStyle, backgroundColor: "var(--system-yellow)" }}>
               <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
                 <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
-                DEPLOY NEW SERVICE
+                {deployStep === "form" ? "DEPLOY NEW SERVICE" : "DEPLOYMENT LOGS"}
               </span>
-              <button onClick={() => setIsDeployOpen(false)} style={closeBtnStyle}>✕</button>
-            </div>
-            <form onSubmit={handleDeploy} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
-              {/* Project Name */}
-              <div style={inputContainerStyle}>
-                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PROJECT NAME:</label>
-                <input 
-                  type="text" 
-                  value={projectName} 
-                  onChange={(e) => setProjectName(e.target.value)} 
-                  placeholder="e.g. BACKEND APIS" 
-                  required
-                  className="font-mono"
-                  style={inputStyle}
-                />
-              </div>
-
-              {/* Port / Domain Form */}
-              <div style={inputContainerStyle}>
-                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PORT / DOMAIN:</label>
-                <input 
-                  type="text" 
-                  value={projectPort} 
-                  onChange={(e) => setProjectPort(e.target.value)} 
-                  placeholder="e.g. 5000 or my-app.ndelok.me" 
-                  required
-                  className="font-mono"
-                  style={inputStyle}
-                />
-              </div>
-
-              {/* Toggle Source Method */}
-              <div style={inputContainerStyle}>
-                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>IMPORT METHOD:</label>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <button 
-                    type="button"
-                    className="btn" 
-                    onClick={() => setDeployMethod("github")}
-                    style={{
-                      flex: 1,
-                      padding: "6px",
-                      fontSize: "0.7rem",
-                      backgroundColor: deployMethod === "github" ? "var(--system-blue)" : "white",
-                      boxShadow: deployMethod === "github" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
-                      transform: deployMethod === "github" ? "translate(1px, 1px)" : "none"
-                    }}
-                  >
-                    GITHUB REPO
-                  </button>
-                  <button 
-                    type="button"
-                    className="btn" 
-                    onClick={() => setDeployMethod("folder")}
-                    style={{
-                      flex: 1,
-                      padding: "6px",
-                      fontSize: "0.7rem",
-                      backgroundColor: deployMethod === "folder" ? "var(--system-blue)" : "white",
-                      boxShadow: deployMethod === "folder" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
-                      transform: deployMethod === "folder" ? "translate(1px, 1px)" : "none"
-                    }}
-                  >
-                    LOCAL FOLDER
-                  </button>
-                </div>
-              </div>
-
-              {/* Github Link / Folder path conditionally */}
-              {deployMethod === "github" ? (
-                <div style={inputContainerStyle}>
-                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>GITHUB SOURCE LINK:</label>
-                  <input 
-                    type="text" 
-                    value={githubLink} 
-                    onChange={(e) => setGithubLink(e.target.value)} 
-                    placeholder="e.g. https://github.com/username/project.git" 
-                    required={deployMethod === "github"}
-                    className="font-mono"
-                    style={inputStyle}
-                  />
-                </div>
-              ) : (
-                <div style={inputContainerStyle}>
-                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>LOCAL FILE FOLDER PATH:</label>
-                  <input 
-                    type="text" 
-                    value={folderPath} 
-                    onChange={(e) => setFolderPath(e.target.value)} 
-                    placeholder="e.g. C:\projects\my-app or /var/www/my-app" 
-                    required={deployMethod === "folder"}
-                    className="font-mono"
-                    style={inputStyle}
-                  />
-                </div>
+              {deployStep === "form" && (
+                <button onClick={() => setIsDeployOpen(false)} style={closeBtnStyle}>✕</button>
               )}
+            </div>
 
-              {/* Build install execution form */}
-              <div style={inputContainerStyle}>
-                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>BUILD INSTALL EXECUTION COMMAND:</label>
-                <input 
-                  type="text" 
-                  value={buildCommand} 
-                  onChange={(e) => setBuildCommand(e.target.value)} 
-                  placeholder="e.g. npm install && npm run build" 
-                  className="font-mono"
-                  style={inputStyle}
-                />
-              </div>
+            {deployStep === "form" ? (
+              <form onSubmit={handleDeploy} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+                {/* Project Name */}
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PROJECT NAME:</label>
+                  <input 
+                    type="text" 
+                    value={projectName} 
+                    onChange={(e) => setProjectName(e.target.value)} 
+                    placeholder="e.g. BACKEND APIS" 
+                    required
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
 
-              {/* Daemon start sequence form */}
-              <div style={inputContainerStyle}>
-                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>DAEMON START SEQUENCE COMMAND:</label>
-                <input 
-                  type="text" 
-                  value={startCommand} 
-                  onChange={(e) => setStartCommand(e.target.value)} 
-                  placeholder="e.g. npm run start or pm2 start app.js" 
-                  required
-                  className="font-mono"
-                  style={inputStyle}
-                />
-              </div>
+                {/* Port / Domain Form */}
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PORT / DOMAIN:</label>
+                  <input 
+                    type="text" 
+                    value={projectPort} 
+                    onChange={(e) => setProjectPort(e.target.value)} 
+                    placeholder="e.g. 5000 or my-app.ndelok.me" 
+                    required
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
 
-              {/* Modal Buttons */}
-              <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "var(--space-xs)" }}>
-                <button type="button" className="btn" onClick={() => setIsDeployOpen(false)} style={modalCancelStyle}>CANCEL</button>
-                <button type="submit" className="btn" style={modalSaveStyle}>DEPLOY SERVICE</button>
+                {/* Toggle Source Method */}
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>IMPORT METHOD:</label>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button 
+                      type="button"
+                      className="btn" 
+                      onClick={() => setDeployMethod("github")}
+                      style={{
+                        flex: 1,
+                        padding: "6px",
+                        fontSize: "0.7rem",
+                        backgroundColor: deployMethod === "github" ? "var(--system-blue)" : "white",
+                        boxShadow: deployMethod === "github" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                        transform: deployMethod === "github" ? "translate(1px, 1px)" : "none"
+                      }}
+                    >
+                      GITHUB REPO
+                    </button>
+                    <button 
+                      type="button"
+                      className="btn" 
+                      onClick={() => setDeployMethod("folder")}
+                      style={{
+                        flex: 1,
+                        padding: "6px",
+                        fontSize: "0.7rem",
+                        backgroundColor: deployMethod === "folder" ? "var(--system-blue)" : "white",
+                        boxShadow: deployMethod === "folder" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                        transform: deployMethod === "folder" ? "translate(1px, 1px)" : "none"
+                      }}
+                    >
+                      LOCAL FOLDER
+                    </button>
+                  </div>
+                </div>
+
+                {/* Github Link / Folder path conditionally */}
+                {deployMethod === "github" ? (
+                  <div style={inputContainerStyle}>
+                    <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>GITHUB SOURCE LINK:</label>
+                    <input 
+                      type="text" 
+                      value={githubLink} 
+                      onChange={(e) => setGithubLink(e.target.value)} 
+                      placeholder="e.g. https://github.com/username/project.git" 
+                      required={deployMethod === "github"}
+                      className="font-mono"
+                      style={inputStyle}
+                    />
+                  </div>
+                ) : (
+                  <div style={inputContainerStyle}>
+                    <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>LOCAL FILE FOLDER PATH:</label>
+                    <input 
+                      type="text" 
+                      value={folderPath} 
+                      onChange={(e) => setFolderPath(e.target.value)} 
+                      placeholder="e.g. C:\projects\my-app or /var/www/my-app" 
+                      required={deployMethod === "folder"}
+                      className="font-mono"
+                      style={inputStyle}
+                    />
+                  </div>
+                )}
+
+                {/* Build install execution form */}
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>BUILD INSTALL EXECUTION COMMAND:</label>
+                  <input 
+                    type="text" 
+                    value={buildCommand} 
+                    onChange={(e) => setBuildCommand(e.target.value)} 
+                    placeholder="e.g. npm install && npm run build" 
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
+
+                {/* Daemon start sequence form */}
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>DAEMON START SEQUENCE COMMAND:</label>
+                  <input 
+                    type="text" 
+                    value={startCommand} 
+                    onChange={(e) => setStartCommand(e.target.value)} 
+                    placeholder="e.g. npm run start or pm2 start app.js" 
+                    required
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
+
+                {/* Modal Buttons */}
+                <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "var(--space-xs)" }}>
+                  <button type="button" className="btn" onClick={() => setIsDeployOpen(false)} style={modalCancelStyle}>CANCEL</button>
+                  <button type="submit" className="btn" style={modalSaveStyle}>DEPLOY SERVICE</button>
+                </div>
+              </form>
+            ) : (
+              <div style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+                <div>
+                  <h4 className="font-heading" style={{ fontSize: "0.85rem", marginBottom: "4px" }}>
+                    DEPLOYING: {projectName.toUpperCase()}
+                  </h4>
+                  <p style={{ fontSize: "0.72rem", color: "#475569" }}>
+                    Please wait while the server runs the install execution commands and binds the ports.
+                  </p>
+                </div>
+
+                {/* Monospace terminal logs */}
+                <div className="font-mono" style={{ 
+                  backgroundColor: "#000000", 
+                  color: "#22c55e", 
+                  padding: "12px", 
+                  fontSize: "0.7rem", 
+                  height: "220px", 
+                  overflowY: "auto",
+                  border: "2px solid black",
+                  boxShadow: "inset 0 0 10px rgba(0,0,0,0.8)",
+                  lineHeight: 1.4,
+                  whiteSpace: "pre-wrap"
+                }}>
+                  {deployLogs.join("\n")}
+                  {!isDeployLogsFinished && (
+                    <span style={{ 
+                      display: "inline-block", 
+                      width: "8px", 
+                      height: "12px", 
+                      backgroundColor: "#22c55e", 
+                      marginLeft: "4px",
+                      animation: "blink 1s infinite" 
+                    }}></span>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button 
+                    className="btn" 
+                    disabled={!isDeployLogsFinished}
+                    onClick={() => {
+                      // Reset and close
+                      setProjectName("");
+                      setProjectPort("");
+                      setGithubLink("");
+                      setFolderPath("");
+                      setBuildCommand("npm install && npm run build");
+                      setStartCommand("npm run start");
+                      setDeployStep("form");
+                      setIsDeployOpen(false);
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: "0.75rem",
+                      backgroundColor: isDeployLogsFinished ? "var(--system-green)" : "#e2e8f0",
+                      cursor: isDeployLogsFinished ? "pointer" : "not-allowed",
+                      boxShadow: "3px 3px 0px black",
+                      opacity: isDeployLogsFinished ? 1 : 0.6
+                    }}
+                  >
+                    {isDeployLogsFinished ? "FINISH & DONE" : "DEPLOYING SERVICE..."}
+                  </button>
+                </div>
               </div>
-            </form>
+            )}
           </div>
         </>
       )}
