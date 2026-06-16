@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Activity, Cpu, HardDrive, Network, Package, Terminal, Settings, LayoutDashboard, FileText } from "lucide-react";
 
 export default function App() {
@@ -952,6 +952,11 @@ function DeployView() {
   const [deployStep, setDeployStep] = useState<"form" | "logs">("form");
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
   const [isDeployLogsFinished, setIsDeployLogsFinished] = useState(false);
+  const [uploadType, setUploadType] = useState<"path" | "upload">("upload");
+  const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   
   // States for Edit Modal
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -1011,9 +1016,41 @@ function DeployView() {
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const filesArray = Array.from(e.target.files).map(f => ({
+        name: f.name,
+        size: f.size,
+        path: f.webkitRelativePath || f.name
+      }));
+      setUploadedFiles(prev => [...prev, ...filesArray]);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.files) {
+      const filesArray = Array.from(e.dataTransfer.files).map(f => ({
+        name: f.name,
+        size: f.size,
+        path: f.name
+      }));
+      setUploadedFiles(prev => [...prev, ...filesArray]);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
   const handleDeploy = (e: React.FormEvent) => {
     e.preventDefault();
     if (!projectName || !projectPort) return;
+
+    if (deployMethod === "folder" && uploadType === "upload" && uploadedFiles.length === 0) {
+      alert("Please select at least one file or folder to upload!");
+      return;
+    }
 
     setDeployStep("logs");
     setDeployLogs([]);
@@ -1029,7 +1066,7 @@ function DeployView() {
       storage: Math.floor(Math.random() * 500 + 100),
       deployMethod,
       githubLink: deployMethod === "github" ? githubLink : "",
-      folderPath: deployMethod === "folder" ? folderPath : "",
+      folderPath: deployMethod === "folder" ? (uploadType === "path" ? folderPath : `[UPLOADED: ${uploadedFiles.length} items]`) : "",
       buildCommand,
       startCommand
     };
@@ -1038,13 +1075,27 @@ function DeployView() {
 
     const logSequence = [
       `[NDELOK-DEPLOY] 01:32:45 - Initializing deployment sequence for "${projectName.toUpperCase()}"...`,
-      `[NDELOK-DEPLOY] 01:32:46 - Import method: ${deployMethod === "github" ? `GITHUB REPOSITORY (${githubLink})` : `LOCAL FILE FOLDER (${folderPath})`}`,
-      `[NDELOK-DEPLOY] 01:32:47 - Pulling codebase source files...`,
-      `[NDELOK-DEPLOY] 01:32:48 - Executing build command: "${buildCommand || "N/A"}"`,
-      `[NDELOK-DEPLOY] 01:32:49 - Build command completed successfully. 0 errors, 2 warnings.`,
-      `[NDELOK-DEPLOY] 01:32:50 - Spawning daemon start sequence command: "${startCommand}"`,
-      `[NDELOK-DEPLOY] 01:32:51 - Service is online and successfully bound to port/domain ${projectPort}!`,
-      `[SUCCESS] 01:32:51 - Deployment completed. Service is fully operational.`
+      deployMethod === "github" 
+        ? `[NDELOK-DEPLOY] 01:32:46 - Import method: GITHUB REPOSITORY (${githubLink})`
+        : uploadType === "upload"
+          ? `[NDELOK-DEPLOY] 01:32:46 - Import method: LOCAL FILES UPLOAD (${uploadedFiles.length} files selected)`
+          : `[NDELOK-DEPLOY] 01:32:46 - Import method: LOCAL FILE FOLDER PATH (${folderPath})`,
+      
+      deployMethod === "github"
+        ? `[NDELOK-DEPLOY] 01:32:47 - Pulling codebase source files from GitHub...`
+        : uploadType === "upload"
+          ? `[NDELOK-DEPLOY] 01:32:47 - Uploading files to server path: /var/ndelok/uploads/${projectName.toUpperCase()}...`
+          : `[NDELOK-DEPLOY] 01:32:47 - Verifying local directory path exists...`,
+
+      uploadType === "upload" && deployMethod === "folder"
+        ? `[NDELOK-DEPLOY] 01:32:48 - Upload completed. Stored ${uploadedFiles.length} items (${(uploadedFiles.reduce((acc, f) => acc + f.size, 0) / 1024).toFixed(1)} KB) on server.`
+        : `[NDELOK-DEPLOY] 01:32:48 - Source codebase validation completed successfully.`,
+
+      `[NDELOK-DEPLOY] 01:32:49 - Executing build install command: "${buildCommand || "N/A"}"`,
+      `[NDELOK-DEPLOY] 01:32:50 - Build command completed successfully. 0 errors, 2 warnings.`,
+      `[NDELOK-DEPLOY] 01:32:51 - Spawning daemon start sequence command: "${startCommand}"`,
+      `[NDELOK-DEPLOY] 01:32:52 - Service is online and successfully bound to port/domain ${projectPort}!`,
+      `[SUCCESS] 01:32:52 - Deployment completed. Service is fully operational.`
     ];
 
     let currentLogIndex = 0;
@@ -1479,17 +1530,188 @@ function DeployView() {
                     />
                   </div>
                 ) : (
-                  <div style={inputContainerStyle}>
-                    <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>LOCAL FILE FOLDER PATH:</label>
-                    <input 
-                      type="text" 
-                      value={folderPath} 
-                      onChange={(e) => setFolderPath(e.target.value)} 
-                      placeholder="e.g. C:\projects\my-app or /var/www/my-app" 
-                      required={deployMethod === "folder"}
-                      className="font-mono"
-                      style={inputStyle}
-                    />
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <div style={inputContainerStyle}>
+                      <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>IMPORT TYPE:</label>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button 
+                          type="button"
+                          className="btn" 
+                          onClick={() => setUploadType("upload")}
+                          style={{
+                            flex: 1,
+                            padding: "6px",
+                            fontSize: "0.7rem",
+                            backgroundColor: uploadType === "upload" ? "var(--system-blue)" : "white",
+                            boxShadow: uploadType === "upload" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                            transform: uploadType === "upload" ? "translate(1px, 1px)" : "none"
+                          }}
+                        >
+                          UPLOAD FILES/FOLDER
+                        </button>
+                        <button 
+                          type="button"
+                          className="btn" 
+                          onClick={() => setUploadType("path")}
+                          style={{
+                            flex: 1,
+                            padding: "6px",
+                            fontSize: "0.7rem",
+                            backgroundColor: uploadType === "path" ? "var(--system-blue)" : "white",
+                            boxShadow: uploadType === "path" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                            transform: uploadType === "path" ? "translate(1px, 1px)" : "none"
+                          }}
+                        >
+                          MANUAL PATH ON SERVER
+                        </button>
+                      </div>
+                    </div>
+
+                    {uploadType === "path" ? (
+                      <div style={inputContainerStyle}>
+                        <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>LOCAL FILE FOLDER PATH:</label>
+                        <input 
+                          type="text" 
+                          value={folderPath} 
+                          onChange={(e) => setFolderPath(e.target.value)} 
+                          placeholder="e.g. C:\projects\my-app or /var/www/my-app" 
+                          required={deployMethod === "folder" && uploadType === "path"}
+                          className="font-mono"
+                          style={inputStyle}
+                        />
+                      </div>
+                    ) : (
+                      <div style={inputContainerStyle}>
+                        <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>UPLOAD FILES / FOLDER:</label>
+                        <div 
+                          onDrop={handleDrop}
+                          onDragOver={handleDragOver}
+                          style={{
+                            border: "3px dashed black",
+                            padding: "16px",
+                            backgroundColor: "#f8fafc",
+                            textAlign: "center",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "10px",
+                            boxShadow: "3px 3px 0px black",
+                          }}
+                        >
+                          <span className="font-mono" style={{ fontSize: "0.75rem", color: "#475569" }}>
+                            Drag & Drop your files/folder here, or
+                          </span>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => fileInputRef.current?.click()}
+                              style={{
+                                padding: "4px 8px",
+                                fontSize: "0.65rem",
+                                backgroundColor: "var(--system-yellow)",
+                                boxShadow: "2px 2px 0px black"
+                              }}
+                            >
+                              SELECT FILES
+                            </button>
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => folderInputRef.current?.click()}
+                              style={{
+                                padding: "4px 8px",
+                                fontSize: "0.65rem",
+                                backgroundColor: "var(--system-yellow)",
+                                boxShadow: "2px 2px 0px black"
+                              }}
+                            >
+                              SELECT FOLDER
+                            </button>
+                          </div>
+                          
+                          <input 
+                            type="file" 
+                            multiple 
+                            style={{ display: "none" }} 
+                            ref={fileInputRef} 
+                            onChange={handleFileChange} 
+                          />
+                          <input 
+                            type="file" 
+                            multiple 
+                            {...{ webkitdirectory: "", directory: "" } as any}
+                            style={{ display: "none" }} 
+                            ref={folderInputRef} 
+                            onChange={handleFileChange} 
+                          />
+                        </div>
+
+                        {/* Selected Files Preview List */}
+                        <div style={{ marginTop: "8px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                            <span className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>
+                              SELECTED ITEMS ({uploadedFiles.length}):
+                            </span>
+                            {uploadedFiles.length > 0 && (
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={() => setUploadedFiles([])}
+                                style={{
+                                  padding: "2px 6px",
+                                  fontSize: "0.6rem",
+                                  backgroundColor: "#fecaca",
+                                  boxShadow: "1.5px 1.5px 0px black"
+                                }}
+                              >
+                                CLEAR ALL
+                              </button>
+                            )}
+                          </div>
+                          
+                          <div className="font-mono" style={{
+                            maxHeight: "100px",
+                            overflowY: "auto",
+                            border: "2.5px solid black",
+                            backgroundColor: "#1e293b",
+                            color: "#f8fafc",
+                            padding: "6px",
+                            fontSize: "0.65rem",
+                            lineHeight: 1.3
+                          }}>
+                            {uploadedFiles.length === 0 ? (
+                              <div style={{ color: "#94a3b8", textAlign: "center", padding: "8px" }}>
+                                No files or folders selected.
+                              </div>
+                            ) : (
+                              uploadedFiles.map((file, idx) => (
+                                <div key={idx} style={{ 
+                                  display: "flex", 
+                                  justifyContent: "space-between", 
+                                  borderBottom: idx < uploadedFiles.length - 1 ? "1px solid #334155" : "none",
+                                  padding: "2px 0",
+                                  gap: "10px"
+                                }}>
+                                  <span style={{ 
+                                    textOverflow: "ellipsis", 
+                                    overflow: "hidden", 
+                                    whiteSpace: "nowrap",
+                                    flex: 1 
+                                  }} title={file.path}>
+                                    {file.path}
+                                  </span>
+                                  <span style={{ color: "#38bdf8", flexShrink: 0 }}>
+                                    {(file.size / 1024).toFixed(1)} KB
+                                  </span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1576,6 +1798,8 @@ function DeployView() {
                       setBuildCommand("npm install && npm run build");
                       setStartCommand("npm run start");
                       setDeployStep("form");
+                      setUploadedFiles([]);
+                      setUploadType("upload");
                       setIsDeployOpen(false);
                     }}
                     style={{
