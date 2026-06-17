@@ -62,7 +62,13 @@ func main() {
 		mux.HandleFunc("/api/plugins/zerotier/install", handler.ZeroTierInstall)
 		mux.HandleFunc("/api/plugins/zerotier/join", handler.ZeroTierJoin)
 		mux.HandleFunc("/api/plugins/zerotier/service", handler.ZeroTierService)
-		mux.HandleFunc("/api/plugins/zerotier/leave", handler.ZeroTierLeave)
+			mux.HandleFunc("/api/plugins/zerotier/leave", handler.ZeroTierLeave)
+			mux.HandleFunc("/api/plugins/tmux/status", handler.TmuxStatus)
+			mux.HandleFunc("/api/plugins/tmux/install", handler.TmuxInstall)
+			mux.HandleFunc("/api/plugins/tmux/new", handler.TmuxNewSession)
+			mux.HandleFunc("/api/plugins/tmux/session", handler.TmuxDeleteSession)
+			mux.HandleFunc("/api/plugins/tmux/terminal", handler.TmuxTerminalWS)
+
 
 	srv := http.Server{
 		Addr:    ":" + port,

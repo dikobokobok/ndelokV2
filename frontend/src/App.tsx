@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, Fragment } from "react";
-import { Activity, Cpu, HardDrive, Network, Package, Terminal, Settings, LayoutDashboard, FileText, Folder, ChevronRight, ArrowUp, Bot, Send, Zap, Server, Shield, RefreshCw, Trash2 } from "lucide-react";
+import { Activity, Cpu, HardDrive, Network, Package, Terminal, Settings, LayoutDashboard, FileText, Folder, ChevronRight, ArrowUp, Bot, Send, Zap, Server, Shield, RefreshCw, Trash2, Plus, X, Minus, Square } from "lucide-react";
 import { AuthGate } from "./AuthPages";
+import "xterm/css/xterm.css";
 
 const API = "http://localhost:1235";
 
@@ -66,10 +67,12 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
   const [metrics, setMetrics] = useState({
     cpu: 0,
     ram: 0,
-    storage: 42,
-    cpuInfo: "Intel Xeon 8-Core @ 3.2GHz",
-    ramInfo: "0GB / 64GB DDR5",
-    storageInfo: "840GB / 2TB NVMe SSD",
+    storage: 0,
+    cpuInfo: "",
+    ramInfo: "",
+    storageInfo: "",
+    uptime: "",
+    uptimeNum: 0,
     network: { up: 0, down: 0 }
   });
 
@@ -201,6 +204,8 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
   }, [onLogout]);
 
   useEffect(() => {
+    if (currentView !== "Dashboard") return;
+
     let mounted = true;
     let timer: ReturnType<typeof setTimeout>;
 
@@ -215,9 +220,11 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
           cpu: data.cpu,
           ram: data.ram,
           storage: data.storage,
-          cpuInfo: data.cpu_info || "Intel Xeon 8-Core @ 3.2GHz",
-          ramInfo: data.ram_info || "0GB / 64GB DDR5",
-          storageInfo: data.storage_info || "840GB / 2TB NVMe SSD",
+          cpuInfo: data.cpu_info || "",
+          ramInfo: data.ram_info || "",
+          storageInfo: data.storage_info || "",
+          uptime: data.uptime || "",
+          uptimeNum: data.uptime_num || 0,
           network: { up: data.network.up, down: data.network.down },
         });
         setCpuHistory(prev => [...prev.slice(1), data.cpu]);
@@ -229,7 +236,7 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
 
     poll();
     return () => { mounted = false; clearTimeout(timer); };
-  }, []);
+  }, [currentView]);
 
   const generatePath = (data: number[], fill = false) => {
     const width = 500;
@@ -404,7 +411,7 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
                 spec={metrics.storageInfo}
               />
 
-              {/* Network Card */}
+              {/* Network + Uptime Card */}
               <div className="card" style={{ backgroundColor: "white", minHeight: "170px", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "var(--space-md)" }}>
                   <h3 className="font-heading" style={{ fontSize: "1.1rem" }}>NETWORK SPEED</h3>
@@ -419,6 +426,10 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
                     <p className="font-heading" style={{ fontSize: "0.7rem", fontWeight: 700 }}>UP</p>
                     <p className="font-display" style={{ fontSize: "1.8rem" }}>{formatNetSpeed(metrics.network.up)}</p>
                   </div>
+                </div>
+                <div style={{ borderTop: "2px solid black", marginTop: "var(--space-sm)", paddingTop: "var(--space-sm)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="font-heading" style={{ fontSize: "0.7rem" }}>UPTIME</span>
+                  <span className="font-mono" style={{ fontSize: "0.85rem", fontWeight: 700 }}>{metrics.uptime || "..."}</span>
                 </div>
               </div>
             </div>
@@ -587,7 +598,6 @@ function MetricCard({ title, value, icon, color, spec }: any) {
             right: "12px",
             backgroundColor: "white", 
             border: "2px solid #000000", 
-            borderRadius: "6px",
             padding: "2px 8px", 
             fontSize: "0.72rem", 
             fontWeight: 700,
@@ -659,18 +669,12 @@ function PluginsView() {
   // Installed & Status states for interactive behavior
   const [installedPlugins, setInstalledPlugins] = useState<Record<string, boolean>>({
     zerotier: false,
-    tmux: true,
-    cloudflare: true,
-    docker: false,
-    nginx: false
+    tmux: false
   });
 
   const [pluginStatuses, setPluginStatuses] = useState<Record<string, string>>({
     zerotier: "CHECKING...",
-    tmux: "RUNNING",
-    cloudflare: "CONNECTED",
-    docker: "AVAILABLE",
-    nginx: "AVAILABLE"
+    tmux: "CHECKING..."
   });
 
   const [zerotierIp, setZerotierIp] = useState("");
@@ -693,6 +697,52 @@ function PluginsView() {
         .catch(() => {
           if (!mounted) return;
           setPluginStatuses(prev => ({ ...prev, zerotier: "OFFLINE" }));
+          timer = setTimeout(poll, 10000);
+        });
+    };
+    poll();
+    return () => { mounted = false; clearTimeout(timer); };
+  }, []);
+
+  // ───────── TMUX state ─────────
+  interface TmuxSession {
+    name: string;
+    created: string;
+    attached: number;
+    windows: number;
+  }
+  const [tmuxSessions, setTmuxSessions] = useState<TmuxSession[]>([]);
+  const [isTmuxSessionListOpen, setIsTmuxSessionListOpen] = useState(false);
+  const [isTmuxNewSessionOpen, setIsTmuxNewSessionOpen] = useState(false);
+  const [isTmuxTerminalOpen, setIsTmuxTerminalOpen] = useState(false);
+  const [tmuxNewSessionName, setTmuxNewSessionName] = useState("");
+  const [tmuxSelectedSession, setTmuxSelectedSession] = useState("");
+  const [isTmuxMinimized, setIsTmuxMinimized] = useState(false);
+  const [isTmuxMaximized, setIsTmuxMaximized] = useState(false);
+
+  const tmuxCloseBtnStyle = {
+    width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#fecaca",
+    cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold" as const,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    padding: 0, boxShadow: "1px 1px 0px black"
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = () => {
+      fetch("http://localhost:1235/api/plugins/tmux/status")
+        .then(res => res.json())
+        .then(data => {
+          if (!mounted) return;
+          setInstalledPlugins(prev => ({ ...prev, tmux: data.installed }));
+          setPluginStatuses(prev => ({ ...prev, tmux: data.status }));
+          setTmuxSessions(data.sessions || []);
+          timer = setTimeout(poll, 5000);
+        })
+        .catch(() => {
+          if (!mounted) return;
+          setPluginStatuses(prev => ({ ...prev, tmux: "OFFLINE" }));
           timer = setTimeout(poll, 10000);
         });
     };
@@ -737,68 +787,17 @@ function PluginsView() {
       badgeText: "v3.3a",
       installed: installedPlugins.tmux,
       details: [
-        { label: "ACTIVE SESSIONS", value: pluginStatuses.tmux === "RUNNING" ? "3 Sessions" : "0 Sessions" },
+        { label: "ACTIVE SESSIONS", value: pluginStatuses.tmux === "RUNNING" ? `${tmuxSessions.length} Session${tmuxSessions.length !== 1 ? "s" : ""}` : "0 Sessions" },
         { label: "DEFAULT SHELL", value: "/bin/zsh" },
         { label: "CPU IMPACT", value: pluginStatuses.tmux === "RUNNING" ? "0.2% Load" : "0.0% Load" }
       ],
-      actions: installedPlugins.tmux
-        ? [pluginStatuses.tmux === "RUNNING" ? "RESTART" : "START", "ATTACH"]
-        : ["INSTALL", "DOCS"]
+      actions: !installedPlugins.tmux
+        ? ["INSTALL"]
+        : pluginStatuses.tmux === "RUNNING"
+          ? ["ATTACH", "REFRESH"]
+          : ["NEW"]
     },
-    {
-      id: "cloudflare",
-      name: "CLOUDFLARE TUNNEL",
-      tagline: "Secure Public Tunneling Without Open Ports",
-      description: "Exposes local web services to the public internet securely. Proxies requests through Cloudflare's edge network without opening hardware firewall ports.",
-      color: "var(--system-red)",
-      status: pluginStatuses.cloudflare,
-      badgeText: "v2024.1.0",
-      installed: installedPlugins.cloudflare,
-      details: [
-        { label: "TUNNEL NAME", value: "ndelok-prod-01" },
-        { label: "CONNECTED HOST", value: pluginStatuses.cloudflare === "CONNECTED" ? "ndelok.me" : "N/A" },
-        { label: "EDGE POPS", value: pluginStatuses.cloudflare === "CONNECTED" ? "CGK / SIN (2 PoPs)" : "N/A" }
-      ],
-      actions: installedPlugins.cloudflare
-        ? [pluginStatuses.cloudflare === "CONNECTED" ? "DISCONNECT" : "CONNECT", "VIEW LOGS"]
-        : ["INSTALL", "DOCS"]
-    },
-    {
-      id: "docker",
-      name: "DOCKER ENGINE",
-      tagline: "Container Orchestration & Isolation",
-      description: "Manage containerized applications, network bridges, and volumes directly from your dashboard. Easily deploy web servers, databases, and microservices.",
-      color: "var(--system-green)",
-      status: pluginStatuses.docker,
-      badgeText: "v24.0.7",
-      installed: installedPlugins.docker,
-      details: [
-        { label: "CONTAINERS", value: pluginStatuses.docker === "RUNNING" ? "1 Active" : "0 Active" },
-        { label: "ENGINE STATUS", value: pluginStatuses.docker === "RUNNING" ? "ACTIVE" : "NOT INSTALLED" },
-        { label: "DOCKER COMPOSE", value: "Supported" }
-      ],
-      actions: installedPlugins.docker 
-        ? [pluginStatuses.docker === "RUNNING" ? "STOP" : "START", "CONFIGURE"] 
-        : ["INSTALL", "DOCS"]
-    },
-    {
-      id: "nginx",
-      name: "NGINX REVERSE PROXY",
-      tagline: "High-performance HTTP Server & Proxy",
-      description: "Configure reverse proxies, load balancing, and SSL termination. Secure your local services and route public web traffic with custom configurations.",
-      color: "oklch(0.8 0.15 200)",
-      status: pluginStatuses.nginx,
-      badgeText: "v1.25.3",
-      installed: installedPlugins.nginx,
-      details: [
-        { label: "ACTIVE SITES", value: pluginStatuses.nginx === "RUNNING" ? "2 Sites" : "0 Sites" },
-        { label: "PORT BINDING", value: "80, 443" },
-        { label: "SSL ENGINE", value: "Let's Encrypt" }
-      ],
-      actions: installedPlugins.nginx 
-        ? [pluginStatuses.nginx === "RUNNING" ? "STOP" : "START", "RELOAD"] 
-        : ["INSTALL", "DOCS"]
-    }
+
   ];
 
   const filteredPlugins = pluginsData.filter(plugin => {
@@ -986,18 +985,43 @@ function PluginsView() {
                         .catch(() => {
                           setPluginStatuses(prev => ({ ...prev, zerotier: "ERROR" }));
                         });
-                    } else if (action === "RESTART" && plugin.id === "tmux") {
-                      const oldStatus = pluginStatuses.tmux;
-                      setPluginStatuses(prev => ({ ...prev, tmux: "RESTARTING" }));
-                      setTimeout(() => {
-                        setPluginStatuses(prev => ({ ...prev, tmux: oldStatus }));
-                      }, 1000);
-                    } else if (action === "START" && plugin.id === "tmux") {
-                      setPluginStatuses(prev => ({ ...prev, tmux: "RUNNING" }));
-                    } else if (action === "DISCONNECT" && plugin.id === "cloudflare") {
-                      setPluginStatuses(prev => ({ ...prev, cloudflare: "DISCONNECTED" }));
-                    } else if (action === "CONNECT" && plugin.id === "cloudflare") {
-                      setPluginStatuses(prev => ({ ...prev, cloudflare: "CONNECTED" }));
+                    } else if (action === "INSTALL" && plugin.id === "tmux") {
+                      setPluginStatuses(prev => ({ ...prev, tmux: "INSTALLING..." }));
+                      fetch("http://localhost:1235/api/plugins/tmux/install", { method: "POST" })
+                        .then(res => res.json())
+                        .then(data => {
+                          if (data.success) {
+                            const poll = setInterval(() => {
+                              fetch("http://localhost:1235/api/plugins/tmux/status")
+                                .then(res => res.json())
+                                .then(d => {
+                                  if (d.installed) {
+                                    clearInterval(poll);
+                                    setInstalledPlugins(prev => ({ ...prev, tmux: true }));
+                                    setPluginStatuses(prev => ({ ...prev, tmux: d.status }));
+                                    setTmuxSessions(d.sessions || []);
+                                  }
+                                })
+                                .catch(() => {});
+                            }, 3000);
+                          }
+                        })
+                        .catch(() => setPluginStatuses(prev => ({ ...prev, tmux: "ERROR" })));
+                    } else if (action === "NEW" && plugin.id === "tmux") {
+                      setTmuxNewSessionName("");
+                      setIsTmuxNewSessionOpen(true);
+                    } else if (action === "ATTACH" && plugin.id === "tmux") {
+                      setIsTmuxSessionListOpen(true);
+                    } else if (action === "REFRESH" && plugin.id === "tmux") {
+                      setPluginStatuses(prev => ({ ...prev, tmux: "REFRESHING" }));
+                      fetch("http://localhost:1235/api/plugins/tmux/status")
+                        .then(res => res.json())
+                        .then(data => {
+                          setInstalledPlugins(prev => ({ ...prev, tmux: data.installed }));
+                          setPluginStatuses(prev => ({ ...prev, tmux: data.status }));
+                          setTmuxSessions(data.sessions || []);
+                        })
+                        .catch(() => setPluginStatuses(prev => ({ ...prev, tmux: "OFFLINE" })));
                     } else if (action === "ENABLE" && plugin.id === "zerotier") {
                       setPluginStatuses(prev => ({ ...prev, zerotier: "ENABLING..." }));
                       fetch("http://localhost:1235/api/plugins/zerotier/service", {
@@ -1053,13 +1077,6 @@ function PluginsView() {
                           }
                         })
                         .catch(() => alert("Failed to connect to server"));
-                    } else if (action === "INSTALL") {
-                      setInstalledPlugins(prev => ({ ...prev, [plugin.id]: true }));
-                      setPluginStatuses(prev => ({ ...prev, [plugin.id]: "RUNNING" }));
-                    } else if (action === "STOP") {
-                      setPluginStatuses(prev => ({ ...prev, [plugin.id]: "STOPPED" }));
-                    } else if (action === "START") {
-                      setPluginStatuses(prev => ({ ...prev, [plugin.id]: "RUNNING" }));
                     } else {
                       alert(`Action "${action}" triggered for ${plugin.name}`);
                     }
@@ -1425,6 +1442,387 @@ function PluginsView() {
               </div>
             )}
           </div>
+        </>
+      )}
+
+      {/* ───────── TMUX Session List Modal ───────── */}
+      {isTmuxSessionListOpen && (
+        <>
+          <div
+            onClick={() => setIsTmuxSessionListOpen(false)}
+            style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)", zIndex: 999 }}
+          />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+            width: "440px", maxWidth: "90%", backgroundColor: "white",
+            border: "3px solid black", boxShadow: "8px 8px 0px black", zIndex: 1000,
+            display: "flex", flexDirection: "column"
+          }}>
+            <div style={{
+              backgroundColor: "var(--system-yellow)", borderBottom: "3px solid black",
+              padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center"
+            }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Terminal size={16} />
+                TMUX SESSIONS
+              </span>
+              <button onClick={() => setIsTmuxSessionListOpen(false)} style={tmuxCloseBtnStyle}>✕</button>
+            </div>
+            <div style={{ padding: "var(--space-md)", maxHeight: "300px", overflowY: "auto" }}>
+              {tmuxSessions.length === 0 ? (
+                <p className="font-mono" style={{ fontSize: "0.75rem", color: "#64748b", textAlign: "center", padding: "20px 0" }}>
+                  No active sessions
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {tmuxSessions.map((s, i) => (
+                    <div key={i} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      border: "2px solid black", padding: "8px 10px", backgroundColor: "#f8fafc",
+                      cursor: "pointer"
+                    }}
+                      onClick={() => {
+                        setTmuxSelectedSession(s.name);
+                        setIsTmuxTerminalOpen(true);
+                      }}
+                    >
+                      <div>
+                        <span className="font-heading" style={{ fontSize: "0.85rem" }}>{s.name}</span>
+                        <span className="font-mono" style={{ fontSize: "0.6rem", color: "#64748b", marginLeft: "8px" }}>
+                          {s.windows} win · {s.attached} attached
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fetch("http://localhost:1235/api/plugins/tmux/session", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ name: s.name })
+                          })
+                            .then(res => res.json())
+                            .then(data => {
+                              if (!data.success) {
+                                alert("Failed: " + data.message);
+                                return;
+                              }
+                              return fetch("http://localhost:1235/api/plugins/tmux/status");
+                            })
+                            .then(res => res && res.json())
+                            .then(data => {
+                              if (data) {
+                                setTmuxSessions(data.sessions || []);
+                                setPluginStatuses(prev => ({ ...prev, tmux: data.status }));
+                              }
+                            })
+                            .catch(() => alert("Failed to connect to server"));
+                        }}
+                        style={{
+                          border: "1.5px solid black", backgroundColor: "var(--system-red)",
+                          color: "black", cursor: "pointer", fontSize: "0.65rem",
+                          padding: "2px 6px", boxShadow: "1px 1px 0px black",
+                          display: "flex", alignItems: "center", gap: "4px"
+                        }}
+                      >
+                        <Trash2 size={12} /> DELETE
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ borderTop: "2px solid black", padding: "8px 12px", display: "flex", justifyContent: "flex-end" }}>
+              <button
+                className="btn"
+                onClick={() => { setIsTmuxSessionListOpen(false); setTmuxNewSessionName(""); setIsTmuxNewSessionOpen(true); }}
+                style={{ padding: "4px 10px", fontSize: "0.7rem", backgroundColor: "var(--system-green)", boxShadow: "2px 2px 0px black", display: "flex", alignItems: "center", gap: "4px" }}
+              >
+                <Plus size={12} /> NEW SESSION
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ───────── TMUX New Session Modal ───────── */}
+      {isTmuxNewSessionOpen && (
+        <>
+          <div
+            onClick={() => setIsTmuxNewSessionOpen(false)}
+            style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)", zIndex: 999 }}
+          />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+            width: "380px", maxWidth: "90%", backgroundColor: "white",
+            border: "3px solid black", boxShadow: "8px 8px 0px black", zIndex: 1000,
+            display: "flex", flexDirection: "column"
+          }}>
+            <div style={{
+              backgroundColor: "var(--system-yellow)", borderBottom: "3px solid black",
+              padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center"
+            }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Plus size={16} />
+                NEW TMUX SESSION
+              </span>
+              <button onClick={() => setIsTmuxNewSessionOpen(false)} style={tmuxCloseBtnStyle}>✕</button>
+            </div>
+            <div style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>SESSION NAME:</label>
+                <input
+                  type="text"
+                  placeholder="e.g. my-session"
+                  value={tmuxNewSessionName}
+                  onChange={(e) => setTmuxNewSessionName(e.target.value)}
+                  className="font-mono"
+                  style={{
+                    border: "3px solid black", padding: "8px 12px", outline: "none",
+                    boxShadow: "3px 3px 0px black", fontSize: "0.85rem", fontWeight: 700,
+                    backgroundColor: "#f8fafc"
+                  }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end" }}>
+                <button
+                  className="btn"
+                  onClick={() => setIsTmuxNewSessionOpen(false)}
+                  style={{ padding: "6px 12px", fontSize: "0.75rem", backgroundColor: "white", boxShadow: "3px 3px 0px black" }}
+                >
+                  CANCEL
+                </button>
+                <button
+                  className="btn"
+                  disabled={!tmuxNewSessionName.trim()}
+                  onClick={() => {
+                    const name = tmuxNewSessionName.trim();
+                    if (!name) return;
+                    fetch("http://localhost:1235/api/plugins/tmux/new", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name })
+                    })
+                      .then(res => res.json())
+                      .then(data => {
+                        if (!data.success) {
+                          alert("Failed: " + data.message);
+                          return;
+                        }
+                        return fetch("http://localhost:1235/api/plugins/tmux/status");
+                      })
+                      .then(res => res && res.json())
+                      .then(data => {
+                        if (data) {
+                          setTmuxSessions(data.sessions || []);
+                          setInstalledPlugins(prev => ({ ...prev, tmux: data.installed }));
+                          setPluginStatuses(prev => ({ ...prev, tmux: data.status }));
+                        }
+                        setIsTmuxNewSessionOpen(false);
+                        setTmuxNewSessionName("");
+                      })
+                      .catch(() => alert("Failed to connect to server"));
+                  }}
+                  style={{
+                    padding: "6px 12px", fontSize: "0.75rem",
+                    backgroundColor: tmuxNewSessionName.trim() ? "var(--system-green)" : "#e2e8f0",
+                    cursor: tmuxNewSessionName.trim() ? "pointer" : "not-allowed",
+                    boxShadow: "3px 3px 0px black"
+                  }}
+                >
+                  SAVE
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ───────── TMUX Terminal Popup ───────── */}
+      {isTmuxTerminalOpen && tmuxSelectedSession && (
+        <>
+          {!isTmuxMinimized && !isTmuxMaximized && (
+            <div
+              onClick={() => { setIsTmuxTerminalOpen(false); setIsTmuxMinimized(false); setIsTmuxMaximized(false); }}
+              style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)", zIndex: 999 }}
+            />
+          )}
+          <TmuxTerminalPopup
+            sessionName={tmuxSelectedSession}
+            onClose={() => { setIsTmuxTerminalOpen(false); setIsTmuxMinimized(false); setIsTmuxMaximized(false); }}
+            isMinimized={isTmuxMinimized}
+            isMaximized={isTmuxMaximized}
+            onMinimize={() => setIsTmuxMinimized(!isTmuxMinimized)}
+            onMaximize={() => { setIsTmuxMaximized(!isTmuxMaximized); setIsTmuxMinimized(false); }}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ───────── TMUX Terminal Popup Component ─────────
+function TmuxTerminalPopup({ sessionName, onClose, isMinimized, isMaximized, onMinimize, onMaximize }: {
+  sessionName: string; onClose: () => void;
+  isMinimized: boolean; isMaximized: boolean;
+  onMinimize: () => void; onMaximize: () => void;
+}) {
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const termRef = useRef<any>(null);
+  const fitRef = useRef<any>(null);
+
+  const [connected, setConnected] = useState(false);
+  const [statusText, setStatusText] = useState("CONNECTING...");
+
+  const defaultW = Math.min(800, Math.floor(window.innerWidth * 0.75));
+  const defaultH = Math.min(560, Math.floor(window.innerHeight * 0.7));
+  const [pos, setPos] = useState(() => ({
+    x: (window.innerWidth - defaultW) / 2,
+    y: (window.innerHeight - defaultH) / 2,
+    w: defaultW, h: defaultH
+  }));
+  const dragRef = useRef<{ startX: number; startY: number; startL: number; startT: number } | null>(null);
+  const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
+
+  const onTitleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0 || isMaximized) return;
+    dragRef.current = { startX: e.clientX, startY: e.clientY, startL: pos.x, startT: pos.y };
+    const d = dragRef.current;
+    const onMove = (me: MouseEvent) => setPos(p => ({ ...p, x: d.startL + me.clientX - d.startX, y: d.startT + me.clientY - d.startY }));
+    const onUp = () => { dragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const onResizeMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (e.button !== 0 || isMaximized) return;
+    resizeRef.current = { startX: e.clientX, startY: e.clientY, startW: pos.w, startH: pos.h };
+    const r = resizeRef.current;
+    const onMove = (me: MouseEvent) => setPos(p => ({
+      ...p,
+      w: Math.max(400, r.startW + me.clientX - r.startX),
+      h: Math.max(280, r.startH + me.clientY - r.startY)
+    }));
+    const onUp = () => { resizeRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  useEffect(() => {
+    if (!terminalRef.current || isMinimized) return;
+
+    let alive = true;
+
+    const initTerminal = async () => {
+      const { Terminal } = await import("xterm");
+      const { FitAddon } = await import("xterm-addon-fit");
+      if (!alive) return;
+
+      const term = new Terminal({
+        cursorBlink: true, fontSize: 14, fontFamily: "'Space Mono', monospace",
+        convertEol: true, cols: 80, rows: 24, cursorStyle: "bar",
+        allowTransparency: true, theme: { background: "#0a0a0a", foreground: "#e0e0e0", cursor: "#e0e0e0", selectionBackground: "#333333" }
+      });
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(terminalRef.current!);
+      setTimeout(() => fitAddon.fit(), 100);
+      termRef.current = term;
+      fitRef.current = fitAddon;
+
+      const ws = new WebSocket(`ws://localhost:1235/api/plugins/tmux/terminal?session=${encodeURIComponent(sessionName)}`);
+      ws.onopen = () => { setConnected(true); setStatusText("CONNECTED"); term.focus(); };
+      ws.onmessage = (e) => { term.clear(); term.write(e.data); };
+      ws.onerror = () => { setConnected(false); setStatusText("ERR"); try { term.write("\r\n[Connection error]\r\n"); } catch {} };
+      ws.onclose = () => { setConnected(false); setStatusText("DISC"); try { term.writeln("\r\n[Disconnected]"); } catch {} };
+      wsRef.current = ws;
+
+      term.onData((data: string) => { if (ws.readyState === WebSocket.OPEN) ws.send(data); });
+    };
+
+    initTerminal();
+
+    return () => {
+      alive = false;
+      if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+      if (termRef.current) { termRef.current.dispose(); termRef.current = null; fitRef.current = null; }
+    };
+  }, [sessionName, isMinimized]);
+
+  useEffect(() => {
+    if (fitRef.current && !isMinimized) {
+      setTimeout(() => fitRef.current.fit(), 100);
+    }
+  }, [isMaximized, isMinimized, pos.w, pos.h]);
+
+  let containerStyle: React.CSSProperties;
+  if (isMaximized) {
+    containerStyle = { position: "fixed", inset: 0, zIndex: 1000, display: "flex", flexDirection: "column", backgroundColor: "#000000", border: "none", boxShadow: "none" };
+  } else if (isMinimized) {
+    containerStyle = { position: "fixed", bottom: "16px", right: "16px", width: "260px", zIndex: 1000, backgroundColor: "#000000", border: "2px solid black", boxShadow: "4px 4px 0px black" };
+  } else {
+    containerStyle = { position: "fixed", left: pos.x, top: pos.y, width: pos.w, height: pos.h, zIndex: 1000, display: "flex", flexDirection: "column", backgroundColor: "#000000", border: "2px solid black", boxShadow: "6px 6px 0px black" };
+  }
+
+  return (
+    <div style={containerStyle}>
+      <div onMouseDown={onTitleMouseDown} style={{
+        backgroundColor: "var(--system-yellow)", borderBottom: "3px solid black",
+        padding: "6px 10px", display: "flex", justifyContent: "space-between",
+        alignItems: "center", flexShrink: 0, cursor: isMaximized ? "default" : "grab",
+        userSelect: "none"
+      }}>
+        <span className="font-syne" style={{ fontSize: "0.7rem", letterSpacing: "0.08em", display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: connected ? "var(--system-green)" : "var(--system-red)", display: "inline-block" }} />
+          TMUX :: {sessionName}
+        </span>
+        <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+          {!isMinimized && (
+            <button onMouseDown={e => e.stopPropagation()} onClick={onMinimize} title="Minimize" style={{
+              width: "20px", height: "20px", border: "2px solid black", backgroundColor: "#fef08a",
+              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+              padding: 0, fontSize: 0
+            }}><Minus size={11} /></button>
+          )}
+          <button onMouseDown={e => e.stopPropagation()} onClick={onMaximize} title={isMaximized ? "Restore" : "Maximize"} style={{
+            width: "20px", height: "20px", border: "2px solid black", backgroundColor: "#bbf7d0",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 0, fontSize: 0
+          }}><Square size={9} /></button>
+          <button onMouseDown={e => e.stopPropagation()} onClick={onClose} title="Close" style={{
+            width: "20px", height: "20px", border: "2px solid black", backgroundColor: "#fecaca",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 0, fontSize: 0
+          }}><X size={11} /></button>
+        </div>
+      </div>
+      {!isMinimized && (
+        <>
+          <div ref={terminalRef} style={{ flex: 1, minHeight: 0, borderTop: "1px solid #222" }} />
+          <div style={{
+            flexShrink: 0, padding: "2px 10px", backgroundColor: "#111",
+            borderTop: "1px solid #222", display: "flex", justifyContent: "space-between",
+            alignItems: "center", fontSize: "0.6rem", fontFamily: "'Space Mono', monospace",
+            color: "#666", letterSpacing: "0.05em"
+          }}>
+            <span>{sessionName}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: "4px", color: connected ? "var(--system-green)" : "var(--system-red)" }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: connected ? "var(--system-green)" : "var(--system-red)", display: "inline-block" }} />
+              {statusText}
+            </span>
+          </div>
+          {!isMaximized && (
+            <div onMouseDown={onResizeMouseDown} style={{
+              position: "absolute", bottom: 0, right: 0, width: 14, height: 14,
+              cursor: "nwse-resize", zIndex: 10
+            }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" style={{ position: "absolute", bottom: 0, right: 0 }}>
+                <line x1="14" y1="6" x2="6" y2="14" stroke="#444" strokeWidth="1.5" />
+                <line x1="14" y1="10" x2="10" y2="14" stroke="#444" strokeWidth="1.5" />
+              </svg>
+            </div>
+          )}
         </>
       )}
     </div>

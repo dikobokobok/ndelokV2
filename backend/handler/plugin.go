@@ -2,12 +2,16 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os/exec"
 	"strings"
+	"time"
 
 	"ndelok-backend/db"
+
+	"github.com/gorilla/websocket"
 )
 
 type zerotierStatusResponse struct {
@@ -216,6 +220,221 @@ func ZeroTierLeave(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("zerotier leave ok: %s", req.NetworkID)
 	writeJSON(w, http.StatusOK, zerotierActionResponse{Success: true, Message: "Left network " + req.NetworkID})
+}
+
+// ───────────── TMUX ─────────────
+
+type tmuxSession struct {
+	Name     string `json:"name"`
+	Created  string `json:"created"`
+	Attached int    `json:"attached"`
+	Windows  int    `json:"windows"`
+}
+
+type tmuxStatusResponse struct {
+	Installed bool          `json:"installed"`
+	Sessions  []tmuxSession `json:"sessions"`
+	Status    string        `json:"status"`
+}
+
+type tmuxSessionRequest struct {
+	Name string `json:"name"`
+}
+
+type tmuxActionResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+func TmuxStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, tmuxActionResponse{Success: false, Message: "Method not allowed"})
+		return
+	}
+
+	resp := tmuxStatusResponse{Installed: false, Status: "NOT_INSTALLED"}
+
+	if _, err := exec.LookPath("tmux"); err != nil {
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	resp.Installed = true
+
+	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}|#{session_created}|#{session_attached}|#{session_windows}").Output()
+	if err != nil {
+		resp.Status = "INSTALLED"
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		s := tmuxSession{Name: parts[0]}
+		if len(parts) > 1 {
+			s.Created = parts[1]
+		}
+		if len(parts) > 2 {
+			fmt.Sscanf(parts[2], "%d", &s.Attached)
+		}
+		if len(parts) > 3 {
+			fmt.Sscanf(parts[3], "%d", &s.Windows)
+		}
+		resp.Sessions = append(resp.Sessions, s)
+	}
+
+	if len(resp.Sessions) > 0 {
+		resp.Status = "RUNNING"
+	} else {
+		resp.Status = "INSTALLED"
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func TmuxInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, tmuxActionResponse{Success: false, Message: "Method not allowed"})
+		return
+	}
+
+	go func() {
+		exec.Command("sh", "-c", "apt-get update -qq && apt-get install -y -qq tmux").Run()
+	}()
+
+	writeJSON(w, http.StatusOK, tmuxActionResponse{Success: true, Message: "Installation started in background"})
+}
+
+func TmuxNewSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, tmuxActionResponse{Success: false, Message: "Method not allowed"})
+		return
+	}
+
+	var req tmuxSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, tmuxActionResponse{Success: false, Message: "Invalid request body"})
+		return
+	}
+
+	if req.Name == "" {
+		writeJSON(w, http.StatusBadRequest, tmuxActionResponse{Success: false, Message: "Session name required"})
+		return
+	}
+
+	cmd := exec.Command("tmux", "new-session", "-d", "-s", req.Name)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, tmuxActionResponse{Success: false, Message: string(out)})
+		return
+	}
+
+	log.Printf("tmux session created: %s", req.Name)
+	writeJSON(w, http.StatusOK, tmuxActionResponse{Success: true, Message: "Session created"})
+}
+
+func TmuxDeleteSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, tmuxActionResponse{Success: false, Message: "Method not allowed"})
+		return
+	}
+
+	var req tmuxSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, tmuxActionResponse{Success: false, Message: "Invalid request body"})
+		return
+	}
+
+	if req.Name == "" {
+		writeJSON(w, http.StatusBadRequest, tmuxActionResponse{Success: false, Message: "Session name required"})
+		return
+	}
+
+	cmd := exec.Command("tmux", "kill-session", "-t", req.Name)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, tmuxActionResponse{Success: false, Message: string(out)})
+		return
+	}
+
+	log.Printf("tmux session killed: %s", req.Name)
+	writeJSON(w, http.StatusOK, tmuxActionResponse{Success: true, Message: "Session deleted"})
+}
+
+func TmuxTerminalWS(w http.ResponseWriter, r *http.Request) {
+	sessionName := r.URL.Query().Get("session")
+	if sessionName == "" {
+		http.Error(w, "session query param required", http.StatusBadRequest)
+		return
+	}
+
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("ws upgrade error: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	done := make(chan struct{}, 1)
+
+	// Poll for pane changes
+	go func() {
+		last := ""
+		first := true
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+
+			out, err := exec.Command("tmux", "capture-pane", "-t", sessionName, "-p", "-S", "-", "-J").Output()
+			if err == nil {
+				cur := string(out)
+				if cur != last || first {
+					first = false
+					last = cur
+					conn.WriteMessage(websocket.TextMessage, []byte(cur))
+				}
+			}
+			time.Sleep(150 * time.Millisecond)
+		}
+	}()
+
+	// Read input from WebSocket and send to tmux
+	inputCh := make(chan string, 128)
+	go func() {
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				close(done)
+				return
+			}
+			inputCh <- string(msg)
+		}
+	}()
+
+	for input := range inputCh {
+		// Handle special keys
+		if input == "\r" {
+			exec.Command("tmux", "send-keys", "-t", sessionName, "Enter").Run()
+		} else if input == "\x7f" || input == "\b" {
+			exec.Command("tmux", "send-keys", "-t", sessionName, "BSpace").Run()
+		} else if input == "\t" {
+			exec.Command("tmux", "send-keys", "-t", sessionName, "Tab").Run()
+		} else if input == "\x1b" {
+			exec.Command("tmux", "send-keys", "-t", sessionName, "Escape").Run()
+		} else if input == "\x03" {
+			exec.Command("tmux", "send-keys", "-t", sessionName, "C-c").Run()
+		} else {
+			exec.Command("tmux", "send-keys", "-t", sessionName, "-l", input).Run()
+		}
+	}
 }
 
 func saveZerotierConfig(networkID, ipAddress, iface string) error {

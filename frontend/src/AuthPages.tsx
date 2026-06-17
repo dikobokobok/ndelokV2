@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Shield, Eye, EyeOff, User, Lock, Mail, Server, Terminal, Cpu } from "lucide-react";
 
 const API = "http://localhost:1235";
@@ -29,19 +29,65 @@ export function AuthGate({ onLogin }: AuthPageProps) {
 //  Shared decorative background ticker
 // ──────────────────────────────────────────────────────────────
 function TerminalTicker() {
+  const [stats, setStats] = useState({ cpu: 0, ram: 0, netDown: 0, uptimeNum: 0 });
+  const [isVisible, setIsVisible] = useState(true);
+
+  useEffect(() => {
+    const onVis = () => setIsVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible) return;
+    let mounted = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const fetchStats = async () => {
+      try {
+        const res = await fetch("http://localhost:1235/api/metrics");
+        if (!res.ok) throw new Error("not ok");
+        const d = await res.json();
+        if (!mounted) return;
+        setStats(s => ({ ...s, cpu: d.cpu ?? s.cpu, ram: d.ram ?? s.ram, netDown: d.network?.down ?? s.netDown, uptimeNum: d.uptime_num ?? s.uptimeNum }));
+      } catch {}
+      if (mounted) timer = setTimeout(fetchStats, 1000);
+    };
+    fetchStats();
+    return () => { mounted = false; clearTimeout(timer); };
+  }, [isVisible]);
+
+  useEffect(() => {
+    if (stats.uptimeNum <= 0 || !isVisible) return;
+    const id = setInterval(() => setStats(s => ({ ...s, uptimeNum: s.uptimeNum + 1 })), 1000);
+    return () => clearInterval(id);
+  }, [stats.uptimeNum, isVisible]);
+
+  const formatSpeed = (b: number) =>
+    b >= 1024 * 1024 ? `${(b / (1024 * 1024)).toFixed(1)} MB/s` :
+    b >= 1024 ? `${(b / 1024).toFixed(1)} KB/s` :
+    `${b.toFixed(0)} B/s`;
+
+  const fmtUptime = (s: number) => {
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (d > 0) return `${d}d ${h}h ${m}m ${sec}s`;
+    if (h > 0) return `${h}h ${m}m ${sec}s`;
+    return `${m}m ${sec}s`;
+  };
+
   const lines = [
     "$ ndelok --version 0.18.0",
     "$ ssh root@production-01",
-    "CPU: 23% · RAM: 61% · NET: ↓ 4.2 MB/s",
+    `CPU: ${stats.cpu.toFixed(1)}% · RAM: ${stats.ram.toFixed(1)}% · NET: ↓ ${formatSpeed(stats.netDown)}`,
     "$ systemctl status zerotier",
     "● zerotier-one.service — ACTIVE (running)",
-    "$ docker ps --format '{{.Names}}'",
-    "nginx-proxy  postgres  redis-cache",
     "$ tail -f /var/log/ndelok/access.log",
-    "[INFO] 2026-06-17T09:42:01 — heartbeat OK",
-    "[WARN] 2026-06-17T09:42:07 — CPU spike 87%",
-    "$ uptime -p   →   up 47 days, 3 hours",
-    "$ df -h / | awk 'NR==2{print $5}'   →   42%",
+    `[INFO] ${new Date().toISOString().replace("T", " ").slice(0, 19)} — server OK`,
+    `[INFO] CPU ${stats.cpu.toFixed(1)}% · UPTIME ${fmtUptime(stats.uptimeNum)}`,
+    `$ uptime -p   →   up ${fmtUptime(stats.uptimeNum)}`,
+    `$ df -h / | awk 'NR==2{print $5}'    →   ${stats.ram.toFixed(0)}% used`,
   ];
 
   return (
@@ -239,6 +285,48 @@ function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [liveStats, setLiveStats] = useState({ cpu: 0, ram: 0, uptimeNum: 0 });
+  const [isVisible, setIsVisible] = useState(true);
+
+  useEffect(() => {
+    const onVis = () => setIsVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible) return;
+    let mounted = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const fetchStats = async () => {
+      try {
+        const res = await fetch("http://localhost:1235/api/metrics");
+        if (!res.ok) throw new Error("not ok");
+        const d = await res.json();
+        if (!mounted) return;
+        setLiveStats(s => ({ ...s, cpu: d.cpu ?? s.cpu, ram: d.ram ?? s.ram, uptimeNum: d.uptime_num ?? s.uptimeNum }));
+      } catch {}
+      if (mounted) timer = setTimeout(fetchStats, 1000);
+    };
+    fetchStats();
+    return () => { mounted = false; clearTimeout(timer); };
+  }, [isVisible]);
+
+  useEffect(() => {
+    if (liveStats.uptimeNum <= 0 || !isVisible) return;
+    const id = setInterval(() => setLiveStats(s => ({ ...s, uptimeNum: s.uptimeNum + 1 })), 1000);
+    return () => clearInterval(id);
+  }, [liveStats.uptimeNum, isVisible]);
+
+  const formatUptime = (s: number) => {
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (d > 0) return `${d}d ${h}h ${m}m ${sec}s`;
+    if (h > 0) return `${h}h ${m}m ${sec}s`;
+    return `${m}m ${sec}s`;
+  };
 
   const validate = () => {
     const newErrors: typeof errors = {};
@@ -377,9 +465,9 @@ function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
             gap: "12px",
           }}
         >
-          <StatChip label="CPU" value="23%" color="var(--system-yellow, #FFD23F)" />
-          <StatChip label="RAM" value="61%" color="var(--system-blue, #74B9FF)" />
-          <StatChip label="UPTIME" value="47d" color="white" />
+          <StatChip label="CPU" value={`${liveStats.cpu.toFixed(1)}%`} color="var(--system-yellow, #FFD23F)" />
+          <StatChip label="RAM" value={`${liveStats.ram.toFixed(1)}%`} color="var(--system-blue, #74B9FF)" />
+          <StatChip label="UPTIME" value={liveStats.uptimeNum ? formatUptime(liveStats.uptimeNum) : "..."} color="white" />
         </div>
       </div>
 

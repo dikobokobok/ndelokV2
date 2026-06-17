@@ -10,6 +10,7 @@ import (
 
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/net"
 )
@@ -23,7 +24,15 @@ var (
 	prevNetStat net.IOCountersStat
 	prevNetOk   bool
 	prevNetTime time.Time
+	startTime   = time.Now()
 )
+
+func init() {
+	if times, err := cpu.Times(false); err == nil && len(times) > 0 {
+		prevCPUTimes = times[0]
+		prevCPUOk = true
+	}
+}
 
 type MetricsResponse struct {
 	CPU         float64 `json:"cpu"`
@@ -32,6 +41,8 @@ type MetricsResponse struct {
 	CPUInfo     string  `json:"cpu_info"`
 	RAMInfo     string  `json:"ram_info"`
 	StorageInfo string  `json:"storage_info"`
+	Uptime      string  `json:"uptime"`
+	UptimeNum   uint64  `json:"uptime_num"`
 	Network     struct {
 		Up   float64 `json:"up"`
 		Down float64 `json:"down"`
@@ -49,7 +60,7 @@ func Metrics(w http.ResponseWriter, r *http.Request) {
 		resp.RAM = v.UsedPercent
 		usedGB := float64(v.Used) / (1024 * 1024 * 1024)
 		totalGB := float64(v.Total) / (1024 * 1024 * 1024)
-		resp.RAMInfo = fmt.Sprintf("%.1fGB / %.0fGB", usedGB, totalGB)
+		resp.RAMInfo = fmt.Sprintf("%.1fGiB / %.1fGiB", usedGB, totalGB)
 	}
 
 	// Storage
@@ -57,10 +68,10 @@ func Metrics(w http.ResponseWriter, r *http.Request) {
 		resp.Storage = v.UsedPercent
 		usedGB := float64(v.Used) / (1024 * 1024 * 1024)
 		totalGB := float64(v.Total) / (1024 * 1024 * 1024)
-		if totalGB >= 1000 {
-			resp.StorageInfo = fmt.Sprintf("%.1fTB / %.1fTB", usedGB/1024.0, totalGB/1024.0)
+		if totalGB >= 1000 && usedGB >= 100 {
+			resp.StorageInfo = fmt.Sprintf("%.1fTiB / %.1fTiB", usedGB/1024.0, totalGB/1024.0)
 		} else {
-			resp.StorageInfo = fmt.Sprintf("%.0fGB / %.0fGB", usedGB, totalGB)
+			resp.StorageInfo = fmt.Sprintf("%.1fGiB / %.0fGiB", usedGB, totalGB)
 		}
 	}
 
@@ -85,22 +96,37 @@ func Metrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Network — bytes delta per second
-	if counters, err := net.IOCounters(false); err == nil && len(counters) > 0 {
-		c := counters[0]
-		if prevNetOk {
-			elapsed := time.Since(prevNetTime).Seconds()
-			if elapsed > 0 {
-				resp.Network.Up = float64(c.BytesSent-prevNetStat.BytesSent) / elapsed
-				resp.Network.Down = float64(c.BytesRecv-prevNetStat.BytesRecv) / elapsed
+		if counters, err := net.IOCounters(false); err == nil && len(counters) > 0 {
+			c := counters[0]
+			if prevNetOk {
+				elapsed := time.Since(prevNetTime).Seconds()
+				if elapsed > 0 {
+					resp.Network.Up = float64(c.BytesSent-prevNetStat.BytesSent) / elapsed
+					resp.Network.Down = float64(c.BytesRecv-prevNetStat.BytesRecv) / elapsed
+				}
 			}
+			prevNetStat = c
+			prevNetOk = true
+			prevNetTime = time.Now()
 		}
-		prevNetStat = c
-		prevNetOk = true
-		prevNetTime = time.Now()
-	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+		// Uptime
+		up, err := host.Uptime()
+		if err != nil {
+			up = uint64(time.Since(startTime).Seconds())
+		}
+		resp.UptimeNum = up
+		days := up / 86400
+		hours := (up % 86400) / 3600
+		mins := (up % 3600) / 60
+		if days > 0 {
+			resp.Uptime = fmt.Sprintf("%dd %dh %dm", days, hours, mins)
+		} else {
+			resp.Uptime = fmt.Sprintf("%dh %dm", hours, mins)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
 }
 
 func storageRoot() string {

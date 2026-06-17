@@ -14,7 +14,9 @@
     "lucide-react": "^0.460.0",
     "ndelok-root": "file:..",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.9",
