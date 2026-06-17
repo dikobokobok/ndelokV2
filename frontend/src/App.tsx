@@ -204,12 +204,6 @@ function Dashboard({ loggedInUser }: { loggedInUser: string }) {
             onClick={() => setCurrentView("Logs & Term")}
           />
           <NavItem 
-            icon={<Bot size={20} />} 
-            label="AI Agent" 
-            active={isAIAgentOpen}
-            onClick={() => setIsAIAgentOpen(prev => !prev)}
-          />
-          <NavItem 
             icon={<Settings size={20} />} 
             label="Settings" 
             active={currentView === "Settings"}
