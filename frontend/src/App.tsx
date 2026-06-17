@@ -1,7 +1,24 @@
 import { useEffect, useState, useRef, Fragment } from "react";
 import { Activity, Cpu, HardDrive, Network, Package, Terminal, Settings, LayoutDashboard, FileText, Folder, ChevronRight, ArrowUp, Bot, Send, Zap, Server, Shield, RefreshCw, Trash2 } from "lucide-react";
+import { AuthGate } from "./AuthPages";
 
 export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loggedInUser, setLoggedInUser] = useState("ADMIN");
+
+  return isLoggedIn ? (
+    <Dashboard loggedInUser={loggedInUser} />
+  ) : (
+    <AuthGate
+      onLogin={(username) => {
+        setLoggedInUser(username.toUpperCase());
+        setIsLoggedIn(true);
+      }}
+    />
+  );
+}
+
+function Dashboard({ loggedInUser }: { loggedInUser: string }) {
   const [currentView, setCurrentView] = useState<"Dashboard" | "Plugins" | "Deploy" | "Explorer" | "Logs & Term" | "AI Agent" | "Settings">("Dashboard");
   const [metrics, setMetrics] = useState({
     cpu: 0,
@@ -222,7 +239,7 @@ export default function App() {
             </div>
             
             <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden" }}>
-              <p className="font-heading" style={{ fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>ADMIN PRODUCTION</p>
+              <p className="font-heading" style={{ fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{loggedInUser}</p>
               <p className="font-mono" style={{ fontSize: "0.68rem", color: "#475569" }}>admin@ndelok.me</p>
             </div>
           </div>
