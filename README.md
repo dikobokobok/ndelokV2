@@ -1,84 +1,71 @@
-# ndelok 🖥️ (Server Console) — v0.18.0 Beta
+# ndelok — Server Console
 
-`ndelok` adalah sebuah konsol monitoring dan manajemen server berbasis estetika **Neubrutalism**. Aplikasi ini menolak gaya dashboard SaaS modern yang monoton (minim gradien, tanpa sudut melengkung halus, tanpa bayangan pudar), menggantinya dengan antarmuka datar ber-kontras tinggi dengan batas hitam tebal (*thick borders*) dan bayangan tegas (*hard shadows*) untuk mempertegas kejelasan fungsi data.
+Neobrutalist server monitoring & management console. Flat, high-contrast UI with thick black borders and hard shadows — rejects gradient-soft SaaS conventions.
 
----
+## Architecture
 
-## ✨ Fitur Utama
-
-- **Dashboard Real-time**: Monitor beban CPU, penggunaan RAM, kapasitas Storage, dan throughput Network dengan angka makro masif.
-- **Grafik CPU Real-time**: Grafik garis (*line chart*) Neobrutalist dinamis yang digambar menggunakan inline SVG dengan fill kuning pop-art untuk melacak fluktuasi beban CPU selama 20 detik terakhir.
-- **Hardware Spec Badges**: Informasi spesifikasi perangkat keras (seperti model prosesor, ukuran RAM ECC, dan tipe NVMe SSD) tersemat di sudut bawah setiap kartu metrik.
-- **Exposed Structure Terminal & Logs**: Tabel log server dengan legibilitas tinggi menggunakan tipe huruf monospace terstruktur.
-- **Settings & Control Form**: Elemen formulir Neobrutalist kaku (tanpa radius sudut) untuk kepraktisan operasional.
-
----
-
-## 🎨 Panduan Desain & Tipografi (Neubrutalist Typography)
-
-Mengacu pada prinsip Neobrutalism yang membedakan secara kontras antara huruf display/heading yang lantang dengan huruf body yang tenang demi legibilitas:
-
-1. **Role: Display (`Bebas Neue` & `Syne`)**  
-   Digunakan untuk momen impresi pertama dan visualisasi metrik makro. Memiliki karakter tegak, condensed, atau sangat lebar untuk dominasi halaman.
-2. **Role: Heading (`Space Grotesk`)**  
-   Digunakan untuk judul kartu, menu navigasi, dan judul halaman. Memberikan kepribadian geometris yang mekanikal.
-3. **Role: Body (`Inter`)**  
-   Sebagai penyeimbang yang tenang untuk deskripsi, salinan operasional, dan teks paragraf agar mata tidak lelah.
-4. **Role: Monospace (`Space Mono`)**  
-   Digunakan untuk label metrik, token sistem, timestamps, dan log server untuk menegaskan struktur mekanis data.
-
----
-
-## 📁 Struktur Proyek
-
-Aplikasi dikemas dengan pemisahan folder frontend yang rapi:
-```text
+```
 ndelok/
-├── frontend/           # Aplikasi frontend utama (Vite + React + TypeScript)
-│   ├── src/
-│   │   ├── App.tsx     # Komponen Dashboard utama dan logika monitoring
-│   │   ├── main.tsx    # Entri React DOM
-│   │   └── index.css   # Loading Google Fonts dan variabel CSS Neobrutalist
-│   ├── index.html
-│   ├── vite.config.ts  # Port default dikunci ke 1234
-│   └── package.json
-├── DESIGN.md           # Acuan Token Desain dan CSS Custom Properties
-├── PRODUCT.md          # Spesifikasi Produk dan Aksesibilitas WCAG 2.2
-├── package.json        # package.json di root (Proxy perintah npm ke subfolder)
-└── README.md           # Berkas ini
+├── frontend/          # React 19 + Vite 6 + TypeScript 5
+│   └── src/
+│       ├── App.tsx        # Dashboard, ZeroTier, session, polling
+│       ├── AuthPages.tsx  # Login / Register / AuthGate
+│       ├── main.tsx       # React entry
+│       └── index.css      # Neobrutalist tokens, Google Fonts
+├── backend/           # Go HTTP server
+│   ├── main.go           # Routes, CORS, server init
+│   ├── db/db.go          # SQLite init (users, zerotier_config)
+│   └── handler/          # auth.go, metrics.go, plugin.go
+├── package.json       # Root proxy — all commands from here
+├── DESIGN.md          # Design reference (use tokens from index.css)
+└── PRODUCT.md         # WCAG 2.2 AA spec
 ```
 
----
+## Quick Start
 
-## 🚀 Cara Menjalankan Aplikasi
-
-Pastikan Node.js dan npm telah terinstal. Jalankan seluruh perintah berikut dari **direktori root** (`ndelok/`):
-
-### 1. Memasang Dependensi
-Lakukan instalasi dependensi di subfolder frontend:
 ```bash
-npm install --prefix frontend
+npm install           # auto-installs frontend/ deps
+npm run dev           # Vite :1234 + Go backend :1235 concurrently
+npm run build         # tsc --noEmit && vite build
 ```
 
-### 2. Menjalankan Server Pengembangan (Dev Mode)
-Jalankan dev server dengan port default `1234`:
-```bash
-npm run dev
-```
-Buka peramban (browser) di alamat: **[http://localhost:1234](http://localhost:1234)**
+## Backend API
 
-### 3. Membuat Build Produksi
-Kompilasi kode sumber TypeScript dan bundel aset statis siap deploy ke folder `frontend/dist`:
-```bash
-npm run build
-```
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/health` | GET | DB connectivity |
+| `/api/auth/login` | POST | Session auth (demo: `admin`/`admin123`) |
+| `/api/auth/register` | POST | Create account |
+| `/api/metrics` | GET | CPU, RAM, disk, network |
+| `/api/plugins/zerotier/status` | GET | ZeroTier installed/running/network |
+| `/api/plugins/zerotier/install` | POST | Install zerotier-one |
+| `/api/plugins/zerotier/join` | POST | Join network + save config |
+| `/api/plugins/zerotier/service` | POST | Start/stop zerotier-one |
+| `/api/plugins/zerotier/leave` | POST | Leave network + clear config |
 
----
+CORS: `http://localhost:1234` only (hardcoded backend/main.go:32).
 
-## 🛠️ Tech Stack & Spesifikasi
+## Features
 
-- **Framework**: Pure client-side **React 19**
-- **Build Tool**: **Vite 6**
-- **Language**: **TypeScript 5**
-- **Aesthetic**: Vanilla CSS (CSS Variables)
-- **Accessibility**: WCAG 2.2 AA (Rasio kontras teks operasional > 4.5:1)
+- **Real-time metrics**: CPU line chart (SVG), RAM, disk, network throughput — polled every 2s
+- **Session auth**: `sessionStorage`, 1h inactivity auto-logout
+- **ZeroTier plugin**: install, join/leave networks, start/stop service, status with live IP
+- **No router**: single-page SPA via `currentView` state enum
+- **WCAG 2.2 AA**: ≥4.5:1 contrast on operational text
+
+## Design System
+
+- **Color**: `oklch()` only (`--system-green`, `--system-blue`, `--system-yellow`, `--system-red`)
+- **Borders**: solid `#000`, `3px`, no `border-radius`, no blur on shadows
+- **Fonts**: `Space Grotesk` (headings), `Inter` (body), `Space Mono` (mono), `Bebas Neue` (display), `Syne` (accent)
+- **Tokens** in `frontend/src/index.css` — use `var(--system-*)`, not DESIGN.md aliases
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 19, Vite 6, TypeScript 5, vanilla CSS |
+| Backend | Go, standard `net/http`, `modernc.org/sqlite` (no CGO) |
+| DB | SQLite (`backend/ndelok.db`) |
+| Icons | lucide-react |
+| Dev tools | concurrently (orchestrates frontend + backend) |

@@ -2,28 +2,74 @@ import { useEffect, useState, useRef, Fragment } from "react";
 import { Activity, Cpu, HardDrive, Network, Package, Terminal, Settings, LayoutDashboard, FileText, Folder, ChevronRight, ArrowUp, Bot, Send, Zap, Server, Shield, RefreshCw, Trash2 } from "lucide-react";
 import { AuthGate } from "./AuthPages";
 
+const API = "http://localhost:1235";
+
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loggedInUser, setLoggedInUser] = useState("ADMIN");
+  const SESSION_KEY = "ndelok-session";
+  const SESSION_DURATION = 3600000;
+
+  const getSession = () => {
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (Date.now() - data.lastActivity > SESSION_DURATION) {
+        sessionStorage.removeItem(SESSION_KEY);
+        return null;
+      }
+      return data;
+    } catch { return null; }
+  };
+
+  const [isLoggedIn, setIsLoggedIn] = useState(() => !!getSession());
+  const [loggedInUser, setLoggedInUser] = useState(() => {
+    const s = getSession();
+    return s ? s.username : "ADMIN";
+  });
+  const [loggedInUserEmail, setLoggedInUserEmail] = useState(() => {
+    const s = getSession();
+    return s ? s.email : "admin@ndelok.me";
+  });
+
+  const doLogin = (username: string, email: string) => {
+    const data = { username: username.toUpperCase(), email: email || `${username.toLowerCase()}@ndelok.me`, lastActivity: Date.now() };
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
+    setLoggedInUser(data.username);
+    setLoggedInUserEmail(data.email);
+    setIsLoggedIn(true);
+  };
+
+  const doLogout = () => {
+    sessionStorage.removeItem(SESSION_KEY);
+    setIsLoggedIn(false);
+  };
 
   return isLoggedIn ? (
-    <Dashboard loggedInUser={loggedInUser} />
+    <Dashboard loggedInUser={loggedInUser} loggedInUserEmail={loggedInUserEmail} onLogout={doLogout} />
   ) : (
-    <AuthGate
-      onLogin={(username) => {
-        setLoggedInUser(username.toUpperCase());
-        setIsLoggedIn(true);
-      }}
-    />
+    <AuthGate onLogin={doLogin} />
   );
 }
 
-function Dashboard({ loggedInUser }: { loggedInUser: string }) {
+const formatNetSpeed = (bytes: number) => {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB/s`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB/s`;
+  }
+  return `${bytes.toFixed(0)} B/s`;
+};
+
+function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser: string; loggedInUserEmail: string; onLogout: () => void }) {
   const [currentView, setCurrentView] = useState<"Dashboard" | "Plugins" | "Deploy" | "Explorer" | "Logs & Term" | "AI Agent" | "Settings">("Dashboard");
   const [metrics, setMetrics] = useState({
     cpu: 0,
     ram: 0,
     storage: 42,
+    cpuInfo: "Intel Xeon 8-Core @ 3.2GHz",
+    ramInfo: "0GB / 64GB DDR5",
+    storageInfo: "840GB / 2TB NVMe SSD",
     network: { up: 0, down: 0 }
   });
 
@@ -112,23 +158,77 @@ function Dashboard({ loggedInUser }: { loggedInUser: string }) {
     window.addEventListener("touchend", handleTouchEnd);
   };
 
+  const SESSION_KEY = "ndelok-session";
+  const SESSION_DURATION = 3600000;
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      const nextCpu = Math.floor(Math.random() * 100);
-      const nextRam = Math.floor(Math.random() * 100);
-      const nextUp = parseFloat((Math.random() * 10).toFixed(1));
-      const nextDown = parseFloat((Math.random() * 50).toFixed(1));
+    const updateActivity = () => {
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const data = JSON.parse(raw);
+          data.lastActivity = Date.now();
+          sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        }
+      } catch {}
+    };
+    window.addEventListener("mousemove", updateActivity, { passive: true });
+    window.addEventListener("keydown", updateActivity, { passive: true });
+    window.addEventListener("click", updateActivity, { passive: true });
+    window.addEventListener("scroll", updateActivity, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", updateActivity);
+      window.removeEventListener("keydown", updateActivity);
+      window.removeEventListener("click", updateActivity);
+      window.removeEventListener("scroll", updateActivity);
+    };
+  }, []);
 
-      setMetrics({
-        cpu: nextCpu,
-        ram: nextRam,
-        storage: 42,
-        network: { up: nextUp, down: nextDown }
-      });
+  useEffect(() => {
+    let mounted = true;
+    const check = setInterval(() => {
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (Date.now() - data.lastActivity > SESSION_DURATION) {
+          sessionStorage.removeItem(SESSION_KEY);
+          if (mounted) onLogout();
+        }
+      } catch {}
+    }, 10000);
+    return () => { mounted = false; clearInterval(check); };
+  }, [onLogout]);
 
-      setCpuHistory(prev => [...prev.slice(1), nextCpu]);
-    }, 1000);
-    return () => clearInterval(interval);
+  useEffect(() => {
+    let mounted = true;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API}/api/metrics`);
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        if (!mounted) return;
+
+        setMetrics({
+          cpu: data.cpu,
+          ram: data.ram,
+          storage: data.storage,
+          cpuInfo: data.cpu_info || "Intel Xeon 8-Core @ 3.2GHz",
+          ramInfo: data.ram_info || "0GB / 64GB DDR5",
+          storageInfo: data.storage_info || "840GB / 2TB NVMe SSD",
+          network: { up: data.network.up, down: data.network.down },
+        });
+        setCpuHistory(prev => [...prev.slice(1), data.cpu]);
+      } catch {
+        // server down — keep showing last values
+      }
+      if (mounted) timer = setTimeout(poll, 1000);
+    };
+
+    poll();
+    return () => { mounted = false; clearTimeout(timer); };
   }, []);
 
   const generatePath = (data: number[], fill = false) => {
@@ -229,12 +329,12 @@ function Dashboard({ loggedInUser }: { loggedInUser: string }) {
               fontWeight: "bold",
               fontSize: "1.1rem"
             }} className="font-heading">
-              A
+              {loggedInUser.charAt(0).toUpperCase()}
             </div>
             
             <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden" }}>
               <p className="font-heading" style={{ fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{loggedInUser}</p>
-              <p className="font-mono" style={{ fontSize: "0.68rem", color: "#475569" }}>admin@ndelok.me</p>
+              <p className="font-mono" style={{ fontSize: "0.68rem", color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{loggedInUserEmail}</p>
             </div>
           </div>
           
@@ -242,6 +342,22 @@ function Dashboard({ loggedInUser }: { loggedInUser: string }) {
             <div style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--system-green)", border: "1px solid black", animation: "pulse 2s infinite" }} />
             <span className="font-mono" style={{ fontSize: "0.62rem", color: "#475569" }}>Session Active · local-auth</span>
           </div>
+
+          <button 
+            className="btn font-heading"
+            onClick={onLogout}
+            style={{
+              backgroundColor: "var(--system-red)",
+              width: "100%",
+              marginTop: "var(--space-sm)",
+              fontSize: "0.8rem",
+              padding: "6px 12px",
+              boxShadow: "2px 2px 0px black",
+              textAlign: "center"
+            }}
+          >
+            LOGOUT
+          </button>
         </div>
       </aside>
 
@@ -264,44 +380,44 @@ function Dashboard({ loggedInUser }: { loggedInUser: string }) {
               {/* CPU Card */}
               <MetricCard 
                 title="CPU USAGE" 
-                value={`${metrics.cpu}%`} 
+                value={`${metrics.cpu.toFixed(1)}%`} 
                 icon={<Cpu size={32} />} 
                 color="var(--system-yellow)"
-                spec="Intel Xeon 8-Core @ 3.2GHz"
+                spec={metrics.cpuInfo}
               />
               
               {/* RAM Card */}
               <MetricCard 
                 title="RAM USAGE" 
-                value={`${metrics.ram}%`} 
+                value={`${metrics.ram.toFixed(1)}%`} 
                 icon={<Activity size={32} />} 
                 color="var(--system-blue)"
-                spec={`${(metrics.ram * 0.64).toFixed(1)}GB / 64GB DDR5`}
+                spec={metrics.ramInfo}
               />
 
               {/* Storage Card */}
               <MetricCard 
                 title="STORAGE" 
-                value={`${metrics.storage}%`} 
+                value={`${metrics.storage.toFixed(1)}%`} 
                 icon={<HardDrive size={32} />} 
                 color="var(--system-red)"
-                spec="840GB / 2TB NVMe SSD"
+                spec={metrics.storageInfo}
               />
 
               {/* Network Card */}
-              <div className="card" style={{ backgroundColor: "white" }}>
+              <div className="card" style={{ backgroundColor: "white", minHeight: "170px", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "var(--space-md)" }}>
                   <h3 className="font-heading" style={{ fontSize: "1.1rem" }}>NETWORK SPEED</h3>
                   <Network size={24} />
                 </div>
-                <div style={{ display: "flex", gap: "var(--space-md)" }}>
-                  <div style={{ flex: 1, padding: "var(--space-sm)", border: "2px solid black", backgroundColor: "var(--system-green)" }}>
+                <div style={{ display: "flex", gap: "var(--space-md)", flex: 1 }}>
+                  <div style={{ flex: 1, padding: "var(--space-sm)", border: "2px solid black", backgroundColor: "var(--system-green)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                     <p className="font-heading" style={{ fontSize: "0.7rem", fontWeight: 700 }}>DOWN</p>
-                    <p className="font-display" style={{ fontSize: "1.8rem" }}>{metrics.network.down} MB/s</p>
+                    <p className="font-display" style={{ fontSize: "1.8rem" }}>{formatNetSpeed(metrics.network.down)}</p>
                   </div>
-                  <div style={{ flex: 1, padding: "var(--space-sm)", border: "2px solid black", backgroundColor: "white" }}>
+                  <div style={{ flex: 1, padding: "var(--space-sm)", border: "2px solid black", backgroundColor: "white", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                     <p className="font-heading" style={{ fontSize: "0.7rem", fontWeight: 700 }}>UP</p>
-                    <p className="font-display" style={{ fontSize: "1.8rem" }}>{metrics.network.up} MB/s</p>
+                    <p className="font-display" style={{ fontSize: "1.8rem" }}>{formatNetSpeed(metrics.network.up)}</p>
                   </div>
                 </div>
               </div>
@@ -317,7 +433,7 @@ function Dashboard({ loggedInUser }: { loggedInUser: string }) {
                 <div style={{ display: "flex", gap: "var(--space-md)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--space-xs)" }}>
                     <span style={{ display: "inline-block", width: "12px", height: "12px", backgroundColor: "var(--system-yellow)", border: "1.5px solid black" }}></span>
-                    <span className="font-heading" style={{ fontSize: "0.75rem" }}>CPU USAGE (CURRENT: {metrics.cpu}%)</span>
+                    <span className="font-heading" style={{ fontSize: "0.75rem" }}>CPU USAGE (CURRENT: {metrics.cpu.toFixed(1)}%)</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--space-xs)" }}>
                     <span className="font-heading" style={{ fontSize: "0.75rem", color: "#475569" }}>MAX: {Math.max(...cpuHistory)}%</span>
@@ -456,7 +572,7 @@ function Dashboard({ loggedInUser }: { loggedInUser: string }) {
 
 function MetricCard({ title, value, icon, color, spec }: any) {
   return (
-    <div className="card" style={{ backgroundColor: color, position: "relative", minHeight: "170px" }}>
+    <div className="card" style={{ backgroundColor: color, position: "relative", minHeight: "170px", height: "100%" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "var(--space-md)" }}>
         <h3 className="font-heading" style={{ fontSize: "1.1rem", maxWidth: "150px" }}>{title}</h3>
         {icon}
@@ -542,7 +658,7 @@ function PluginsView() {
 
   // Installed & Status states for interactive behavior
   const [installedPlugins, setInstalledPlugins] = useState<Record<string, boolean>>({
-    zerotier: true,
+    zerotier: false,
     tmux: true,
     cloudflare: true,
     docker: false,
@@ -550,18 +666,45 @@ function PluginsView() {
   });
 
   const [pluginStatuses, setPluginStatuses] = useState<Record<string, string>>({
-    zerotier: "ONLINE",
+    zerotier: "CHECKING...",
     tmux: "RUNNING",
     cloudflare: "CONNECTED",
     docker: "AVAILABLE",
     nginx: "AVAILABLE"
   });
 
+  const [zerotierIp, setZerotierIp] = useState("");
+  const [zerotierIface, setZerotierIface] = useState("");
+  useEffect(() => {
+    let mounted = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = () => {
+      fetch("http://localhost:1235/api/plugins/zerotier/status")
+        .then(res => res.json())
+        .then(data => {
+          if (!mounted) return;
+          setInstalledPlugins(prev => ({ ...prev, zerotier: data.installed }));
+          setPluginStatuses(prev => ({ ...prev, zerotier: data.status }));
+          if (data.networkId) setCurrentZerotierId(data.networkId);
+          setZerotierIp(data.ipAddress);
+          setZerotierIface(data.interface);
+          timer = setTimeout(poll, 5000);
+        })
+        .catch(() => {
+          if (!mounted) return;
+          setPluginStatuses(prev => ({ ...prev, zerotier: "OFFLINE" }));
+          timer = setTimeout(poll, 10000);
+        });
+    };
+    poll();
+    return () => { mounted = false; clearTimeout(timer); };
+  }, []);
+
   // Modal & Configuration States
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [selectedPlugin, setSelectedPlugin] = useState<any>(null);
-  const [zerotierIdInput, setZerotierIdInput] = useState("8056c85e45c71a39");
-  const [currentZerotierId, setCurrentZerotierId] = useState("8056c85e45c71a39");
+  const [zerotierIdInput, setZerotierIdInput] = useState("");
+  const [currentZerotierId, setCurrentZerotierId] = useState("");
   const [isMinimized, setIsMinimized] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
 
@@ -576,13 +719,13 @@ function PluginsView() {
       badgeText: "v1.12.2",
       installed: installedPlugins.zerotier,
       details: [
-        { label: "NETWORK ID", value: currentZerotierId },
-        { label: "IP ADDRESS", value: pluginStatuses.zerotier === "ONLINE" ? "10.147.20.12" : "N/A" },
-        { label: "INTERFACE", value: pluginStatuses.zerotier === "ONLINE" ? "ztly2t4" : "N/A" }
+        { label: "NETWORK ID", value: currentZerotierId || "N/A" },
+        { label: "IP ADDRESS", value: zerotierIp || "N/A" },
+        { label: "INTERFACE", value: zerotierIface || "N/A" }
       ],
       actions: installedPlugins.zerotier 
-        ? [pluginStatuses.zerotier === "ONLINE" ? "DISABLE" : "ENABLE", "CONFIGURE"]
-        : ["INSTALL", "DOCS"]
+        ? [pluginStatuses.zerotier === "RUNNING" ? "DISABLE" : "ENABLE", "DELETE", "CONFIGURE"]
+        : ["INSTALL"]
     },
     {
       id: "tmux",
@@ -797,21 +940,52 @@ function PluginsView() {
               gap: "var(--space-sm)",
               justifyContent: "flex-end"
             }}>
-              {plugin.actions.map((action, idx) => (
-                <button 
-                  key={idx} 
-                  className="btn" 
+              {plugin.actions.map((action, idx) => {
+                const isZerotier = plugin.id === "zerotier";
+                const ztRunning = pluginStatuses.zerotier === "RUNNING";
+                const ztStopped = pluginStatuses.zerotier === "STOPPED";
+                const hasNetId = currentZerotierId && currentZerotierId !== "N/A";
+                const isDisabled = isZerotier && (
+                  (action === "ENABLE" && (!hasNetId || ztRunning)) ||
+                  (action === "DISABLE" && (!hasNetId || ztStopped)) ||
+                  (action === "DELETE" && !hasNetId)
+                );
+                let bgColor = "white";
+                if (action === "ENABLE") bgColor = "var(--system-green)";
+                else if (action === "DISABLE") bgColor = "var(--system-yellow)";
+                else if (action === "DELETE") bgColor = "var(--system-red)";
+                return (
+                <button
+                  key={idx}
+                  className="btn"
+                  disabled={isDisabled}
                   onClick={() => {
-                    if (action === "CONFIGURE" && plugin.id === "zerotier") {
+                    if (action === "CONFIGURE" && isZerotier) {
                       setSelectedPlugin(plugin);
-                      setZerotierIdInput(currentZerotierId);
+                      setZerotierIdInput(hasNetId ? currentZerotierId : "");
                       setIsConfigOpen(true);
                       setIsMinimized(false);
                       setIsMaximized(false);
-                    } else if (action === "DISABLE" && plugin.id === "zerotier") {
-                      setPluginStatuses(prev => ({ ...prev, zerotier: "DISABLED" }));
-                    } else if (action === "ENABLE" && plugin.id === "zerotier") {
-                      setPluginStatuses(prev => ({ ...prev, zerotier: "ONLINE" }));
+                    } else if (action === "INSTALL" && isZerotier) {
+                      setPluginStatuses(prev => ({ ...prev, zerotier: "INSTALLING..." }));
+                      fetch("http://localhost:1235/api/plugins/zerotier/install", { method: "POST" })
+                        .then(() => {
+                          const poll = setInterval(() => {
+                            fetch("http://localhost:1235/api/plugins/zerotier/status")
+                              .then(res => res.json())
+                              .then(data => {
+                                if (data.installed) {
+                                  clearInterval(poll);
+                                  setInstalledPlugins(prev => ({ ...prev, zerotier: true }));
+                                  setPluginStatuses(prev => ({ ...prev, zerotier: data.status }));
+                                }
+                              })
+                              .catch(() => {});
+                          }, 3000);
+                        })
+                        .catch(() => {
+                          setPluginStatuses(prev => ({ ...prev, zerotier: "ERROR" }));
+                        });
                     } else if (action === "RESTART" && plugin.id === "tmux") {
                       const oldStatus = pluginStatuses.tmux;
                       setPluginStatuses(prev => ({ ...prev, tmux: "RESTARTING" }));
@@ -824,6 +998,61 @@ function PluginsView() {
                       setPluginStatuses(prev => ({ ...prev, cloudflare: "DISCONNECTED" }));
                     } else if (action === "CONNECT" && plugin.id === "cloudflare") {
                       setPluginStatuses(prev => ({ ...prev, cloudflare: "CONNECTED" }));
+                    } else if (action === "ENABLE" && plugin.id === "zerotier") {
+                      setPluginStatuses(prev => ({ ...prev, zerotier: "ENABLING..." }));
+                      fetch("http://localhost:1235/api/plugins/zerotier/service", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "start" })
+                      })
+                        .then(res => res.json())
+                        .then(data => {
+                          if (data.success) {
+                            setPluginStatuses(prev => ({ ...prev, zerotier: "RUNNING" }));
+                          } else {
+                            setPluginStatuses(prev => ({ ...prev, zerotier: "ERROR" }));
+                          }
+                        })
+                        .catch(() => setPluginStatuses(prev => ({ ...prev, zerotier: "OFFLINE" })));
+                    } else if (action === "DISABLE" && plugin.id === "zerotier") {
+                      setPluginStatuses(prev => ({ ...prev, zerotier: "DISABLING..." }));
+                      fetch("http://localhost:1235/api/plugins/zerotier/service", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "stop" })
+                      })
+                        .then(res => res.json())
+                        .then(data => {
+                          if (data.success) {
+                            setPluginStatuses(prev => ({ ...prev, zerotier: "STOPPED" }));
+                          } else {
+                            setPluginStatuses(prev => ({ ...prev, zerotier: "ERROR" }));
+                          }
+                        })
+                        .catch(() => setPluginStatuses(prev => ({ ...prev, zerotier: "OFFLINE" })));
+                    } else if (action === "DELETE" && plugin.id === "zerotier") {
+                      const networkId = currentZerotierId;
+                      if (!networkId || networkId === "N/A") {
+                        alert("No network to leave");
+                        return;
+                      }
+                      fetch("http://localhost:1235/api/plugins/zerotier/leave", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ networkId })
+                      })
+                        .then(res => res.json())
+                        .then(data => {
+                          if (data.success) {
+                            setCurrentZerotierId("");
+                            setZerotierIp("");
+                            setZerotierIface("");
+                            setPluginStatuses(prev => ({ ...prev, zerotier: "STOPPED" }));
+                          } else {
+                            alert("Failed to leave: " + data.message);
+                          }
+                        })
+                        .catch(() => alert("Failed to connect to server"));
                     } else if (action === "INSTALL") {
                       setInstalledPlugins(prev => ({ ...prev, [plugin.id]: true }));
                       setPluginStatuses(prev => ({ ...prev, [plugin.id]: "RUNNING" }));
@@ -835,17 +1064,20 @@ function PluginsView() {
                       alert(`Action "${action}" triggered for ${plugin.name}`);
                     }
                   }}
-                  style={{ 
-                    padding: "2px 6px", 
-                    fontSize: "0.65rem", 
+                  style={{
+                    padding: "2px 6px",
+                    fontSize: "0.65rem",
                     boxShadow: "1.5px 1.5px 0px black",
-                    backgroundColor: idx === 0 ? "white" : "black",
-                    color: idx === 0 ? "black" : "white"
+                    backgroundColor: isDisabled ? "#e2e8f0" : bgColor,
+                    color: isDisabled ? "#94a3b8" : "black",
+                    cursor: isDisabled ? "not-allowed" : "pointer",
+                    opacity: isDisabled ? 0.5 : 1
                   }}
                 >
                   {action}
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}
@@ -1051,6 +1283,94 @@ function PluginsView() {
                   </div>
                 </div>
 
+                {/* Service Control */}
+                <div style={{ borderTop: "2px solid black", paddingTop: "var(--space-sm)" }}>
+                  <h5 className="font-heading" style={{ fontSize: "0.75rem", marginBottom: "6px" }}>
+                    SERVICE CONTROL
+                  </h5>
+                  <div style={{ display: "flex", gap: "var(--space-sm)" }}>
+                    {(() => {
+                      const ztRunning = pluginStatuses.zerotier === "RUNNING";
+                      const hasNetId = currentZerotierId && currentZerotierId !== "N/A";
+                      const isToggleDisabled = !hasNetId;
+                      const toggleAction = ztRunning ? "stop" : "start";
+                      const toggleLabel = ztRunning ? "DISABLE" : "ENABLE";
+                      const toggleColor = isToggleDisabled ? "#e2e8f0" : ztRunning ? "var(--system-yellow)" : "var(--system-green)";
+                      const deleteDisabled = !hasNetId;
+                      return (<>
+                    <button
+                      className="btn"
+                      disabled={isToggleDisabled}
+                      onClick={() => {
+                        fetch("http://localhost:1235/api/plugins/zerotier/service", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ action: toggleAction })
+                        })
+                          .then(res => res.json())
+                          .then(data => {
+                            if (data.success) {
+                              setPluginStatuses(prev => ({ ...prev, zerotier: ztRunning ? "STOPPED" : "RUNNING" }));
+                            } else {
+                              alert("Failed: " + data.message);
+                            }
+                          })
+                          .catch(() => alert("Failed to connect to server"));
+                      }}
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: "0.7rem",
+                        backgroundColor: toggleColor,
+                        cursor: isToggleDisabled ? "not-allowed" : "pointer",
+                        opacity: isToggleDisabled ? 0.5 : 1,
+                        boxShadow: "2px 2px 0px black"
+                      }}
+                    >
+                      {toggleLabel}
+                    </button>
+                    <button
+                      className="btn"
+                      disabled={deleteDisabled}
+                      onClick={() => {
+                        const networkId = currentZerotierId;
+                        if (!networkId || networkId === "N/A") {
+                          alert("No network to leave");
+                          return;
+                        }
+                        fetch("http://localhost:1235/api/plugins/zerotier/leave", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ networkId })
+                        })
+                          .then(res => res.json())
+                          .then(data => {
+                            if (data.success) {
+                              setCurrentZerotierId("");
+                              setZerotierIp("");
+                              setZerotierIface("");
+                              setPluginStatuses(prev => ({ ...prev, zerotier: "STOPPED" }));
+                            } else {
+                              alert("Failed: " + data.message);
+                            }
+                          })
+                          .catch(() => alert("Failed to connect to server"));
+                      }}
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: "0.7rem",
+                        backgroundColor: deleteDisabled ? "#e2e8f0" : "var(--system-red)",
+                        cursor: deleteDisabled ? "not-allowed" : "pointer",
+                        opacity: deleteDisabled ? 0.5 : 1,
+                        boxShadow: "2px 2px 0px black"
+                      }}
+                    >
+                      DELETE
+                    </button>
+                    </>);
+                    })()}
+                  </div>
+                </div>
+
                 {/* Actions */}
                 <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "auto", paddingTop: "var(--space-sm)" }}>
                   <button 
@@ -1070,8 +1390,24 @@ function PluginsView() {
                     disabled={zerotierIdInput.length !== 16}
                     onClick={() => {
                       if (zerotierIdInput.length === 16) {
-                        setCurrentZerotierId(zerotierIdInput);
-                        setIsConfigOpen(false);
+                        fetch("http://localhost:1235/api/plugins/zerotier/join", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ networkId: zerotierIdInput })
+                        })
+                          .then(res => res.json())
+                          .then(data => {
+                            if (data.success) {
+                              setCurrentZerotierId(zerotierIdInput);
+                              setPluginStatuses(prev => ({ ...prev, zerotier: "RUNNING" }));
+                              setZerotierIp("JOINING...");
+                              setZerotierIface("PENDING...");
+                              setIsConfigOpen(false);
+                            } else {
+                              alert("Failed to join: " + data.message);
+                            }
+                          })
+                          .catch(() => alert("Failed to connect to server"));
                       }
                     }}
                     style={{
@@ -1083,7 +1419,7 @@ function PluginsView() {
                       opacity: zerotierIdInput.length === 16 ? 1 : 0.6
                     }}
                   >
-                    SAVE ID
+                    SAVE & JOIN
                   </button>
                 </div>
               </div>

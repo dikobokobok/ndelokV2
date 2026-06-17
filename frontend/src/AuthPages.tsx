@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { Shield, Eye, EyeOff, User, Lock, Mail, Server, Terminal, Cpu } from "lucide-react";
 
+const API = "http://localhost:1235";
+
 // ──────────────────────────────────────────────────────────────
 //  Types
 // ──────────────────────────────────────────────────────────────
 type AuthView = "login" | "register";
 
 interface AuthPageProps {
-  onLogin: (username: string) => void;
+  onLogin: (username: string, email: string) => void;
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -226,7 +228,7 @@ function StatChip({
 //  LOGIN PAGE
 // ──────────────────────────────────────────────────────────────
 interface LoginPageProps {
-  onLogin: (username: string) => void;
+  onLogin: (username: string, email: string) => void;
   onSwitchToRegister: () => void;
 }
 
@@ -247,7 +249,7 @@ function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
     return newErrors;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
     const validationErrors = validate();
@@ -258,16 +260,25 @@ function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
     setErrors({});
     setIsLoading(true);
 
-    // Simulate async auth
-    setTimeout(() => {
-      setIsLoading(false);
-      // Accept "admin" / "admin123" as demo credentials
-      if (username === "admin" && password === "admin123") {
-        onLogin(username);
+    try {
+      const res = await fetch(`${API}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        onLogin(username, data.user?.email || "");
       } else {
-        setLoginError("Username atau password salah. Coba: admin / admin123");
+        setLoginError(data.message || "Login failed");
       }
-    }, 800);
+    } catch {
+      setLoginError("Cannot connect to server");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -495,7 +506,7 @@ function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
               }}
             >
               <p className="font-mono" style={{ fontSize: "0.68rem", color: "#475569" }}>
-                Demo credentials → <strong>admin</strong> / <strong>admin123</strong>
+                Belum punya akun? Daftar dulu, lalu login.
               </p>
             </div>
 
@@ -601,7 +612,7 @@ function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
 //  REGISTER PAGE
 // ──────────────────────────────────────────────────────────────
 interface RegisterPageProps {
-  onLogin: (username: string) => void;
+  onLogin: (username: string, email: string) => void;
   onSwitchToLogin: () => void;
 }
 
@@ -662,7 +673,7 @@ function RegisterPage({ onLogin, onSwitchToLogin }: RegisterPageProps) {
 
   const strength = getPasswordStrength();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
@@ -671,10 +682,26 @@ function RegisterPage({ onLogin, onSwitchToLogin }: RegisterPageProps) {
     }
     setErrors({});
     setIsLoading(true);
-    setTimeout(() => {
+
+    try {
+      const res = await fetch(`${API}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setStep("success");
+      } else {
+        setErrors({ username: data.message || "Registration failed" });
+      }
+    } catch {
+      setErrors({ username: "Cannot connect to server" });
+    } finally {
       setIsLoading(false);
-      setStep("success");
-    }, 1000);
+    }
   };
 
   if (step === "success") {
@@ -729,7 +756,6 @@ function RegisterPage({ onLogin, onSwitchToLogin }: RegisterPageProps) {
           >
             <div style={{ color: "#475569", marginBottom: "4px" }}>$ ndelok auth register</div>
             <div style={{ color: "#22c55e" }}>✔ User "{form.username}" created</div>
-            <div style={{ color: "#22c55e" }}>✔ Email verified (pending)</div>
             <div style={{ color: "#22c55e" }}>✔ Session initialized</div>
             <div style={{ marginTop: "8px" }}>
               <span style={{ color: "#475569" }}>→ </span>
@@ -750,7 +776,7 @@ function RegisterPage({ onLogin, onSwitchToLogin }: RegisterPageProps) {
           <button
             id="register-go-dashboard-btn"
             className="btn"
-            onClick={() => onLogin(form.username)}
+            onClick={() => onLogin(form.username, form.email)}
             style={{
               width: "100%",
               padding: "14px",
