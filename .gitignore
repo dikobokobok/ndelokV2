@@ -44,3 +44,13 @@ backend/workspaces/
 # Custom Gemini files
 .gemini/
 frontend/.gemini/
+
+# Scratch artifacts / AI agent output
+brain/
+
+# SQLite WAL (runtime cache, recreated automatically)
+*.db-wal
+*.db-shm
+
+# Compiled Go binary
+backend/ndelok-backend.exe

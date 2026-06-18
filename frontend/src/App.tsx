@@ -3140,29 +3140,8 @@ interface FileSystemItem {
 }
 
 function ExplorerView() {
-  const [fs, setFs] = useState<FileSystemItem[]>([
-    { id: "root", name: "root", type: "directory", parentId: null, createdAt: "2026-06-16 12:00:00" },
-    { id: "dir-src", name: "src", type: "directory", parentId: "root", createdAt: "2026-06-16 12:05:00" },
-    { id: "dir-public", name: "public", type: "directory", parentId: "root", createdAt: "2026-06-16 12:10:00" },
-    { id: "file-readme", name: "README.md", type: "file", parentId: "root", size: 4, content: `# ndelok\nSistem monitoring server modern dengan antarmuka Neobrutalist.\n\n## Fitur\n- Dashboard Metrik Real-time\n- Manajer Deploy Layanan\n- File Explorer Server`, createdAt: "2026-06-16 12:00:00" },
-    { id: "file-pkg", name: "package.json", type: "file", parentId: "root", size: 1, content: `{\n  "name": "ndelok",\n  "version": "0.18.0",\n  "type": "module",\n  "private": true,\n  "scripts": {\n    "dev": "vite",\n    "build": "tsc && vite build"\n  },\n  "dependencies": {\n    "react": "^19.0.0",\n    "react-dom": "^19.0.0"\n  }\n}`, createdAt: "2026-06-16 12:02:00" },
-    { id: "file-vite", name: "vite.config.ts", type: "file", parentId: "root", size: 2, content: `import { defineConfig } from "vite";\nimport react from "@vitejs/plugin-react";\n\nexport default defineConfig({\n  plugins: [react()],\n  server: {\n    port: 1234\n  }\n});`, createdAt: "2026-06-16 12:03:00" },
-    
-    // Inside src/
-    { id: "dir-components", name: "components", type: "directory", parentId: "dir-src", createdAt: "2026-06-16 12:06:00" },
-    { id: "file-app-tsx", name: "App.tsx", type: "file", parentId: "dir-src", size: 5, content: `import React, { useState } from "react";\n\nexport default function App() {\n  const [count, setCount] = useState(0);\n  return (\n    <div>\n      <h1>Ndelok Server Dashboard</h1>\n      <button onClick={() => setCount(c => c + 1)}>Counter: {count}</button>\n    </div>\n  );\n}`, createdAt: "2026-06-16 12:07:00" },
-    { id: "file-main-tsx", name: "main.tsx", type: "file", parentId: "dir-src", size: 1, content: `import React from "react";\nimport ReactDOM from "react-dom/client";\nimport App from "./App";\n\nReactDOM.createRoot(document.getElementById("root")!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);`, createdAt: "2026-06-16 12:08:00" },
-    { id: "file-index-css", name: "index.css", type: "file", parentId: "dir-src", size: 4, content: `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');\nbody {\n  margin: 0;\n  font-family: 'Inter', sans-serif;\n  background-color: #f8fafc;\n}`, createdAt: "2026-06-16 12:09:00" },
-
-    // Inside src/components
-    { id: "file-header-tsx", name: "Header.tsx", type: "file", parentId: "dir-components", size: 3, content: `import React from "react";\n\nexport function Header() {\n  return (\n    <header style={{ borderBottom: "3px solid black", padding: "10px" }}>\n      <h2 style={{ margin: 0 }}>NDELOK MANAGER</h2>\n    </header>\n  );\n}`, createdAt: "2026-06-16 12:06:30" },
-    { id: "file-button-tsx", name: "Button.tsx", type: "file", parentId: "dir-components", size: 2, content: `import React from "react";\n\nexport function Button({ children, onClick }: any) {\n  return (\n    <button className="btn" onClick={onClick}>\n      {children}\n    </button>\n  );\n}`, createdAt: "2026-06-16 12:06:45" },
-
-    // Inside public/
-    { id: "file-manifest", name: "manifest.json", type: "file", parentId: "dir-public", size: 1, content: `{\n  "short_name": "Ndelok",\n  "name": "Ndelok Server Dashboard Overlay",\n  "icons": [],\n  "start_url": ".",\n  "display": "standalone",\n  "theme_color": "#000000",\n  "background_color": "#ffffff"\n}`, createdAt: "2026-06-16 12:11:00" }
-  ]);
-
-  const [currentFolderId, setCurrentFolderId] = useState<string>("root");
+  const [fs, setFs] = useState<FileSystemItem[]>([]);
+  const [currentFolderId, setCurrentFolderId] = useState<string>("/");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [clipboard, setClipboard] = useState<{ itemId: string; action: "copy" | "cut" } | null>(null);
@@ -3185,126 +3164,171 @@ function ExplorerView() {
   // Drag and drop highlights
   const [isDragOverPane, setIsDragOverPane] = useState(false);
 
+  const getBaseName = (path: string) => {
+    const lastSlash = path.lastIndexOf("/");
+    if (lastSlash === -1) return path;
+    return path.substring(lastSlash + 1);
+  };
+
+  // Fetch files from backend
+  const fetchFiles = async (folderId: string, search = "") => {
+    try {
+      const url = `${API}/api/explorer/list?path=${encodeURIComponent(folderId)}${search ? `&search=${encodeURIComponent(search)}` : ""}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setFs(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchFiles(currentFolderId, searchQuery);
+  }, [currentFolderId, searchQuery]);
+
   // Breadcrumbs calculation
   const getBreadcrumbs = () => {
-    const crumbs: FileSystemItem[] = [];
-    let tempId: string | null = currentFolderId;
-    while (tempId) {
-      const folder = fs.find(x => x.id === tempId);
-      if (folder) {
-        crumbs.unshift(folder);
-        tempId = folder.parentId;
-      } else {
-        break;
+    const crumbs: { id: string; name: string }[] = [];
+    crumbs.push({ id: "/", name: "root" });
+    if (currentFolderId !== "root" && currentFolderId !== "/") {
+      const parts = currentFolderId.split("/").filter(Boolean);
+      let currentPath = "";
+      for (const part of parts) {
+        currentPath += "/" + part;
+        crumbs.push({ id: currentPath, name: part });
       }
     }
     return crumbs;
   };
 
   const getRelativePath = (item: FileSystemItem): string => {
-    const segments: string[] = [];
-    let curr: FileSystemItem | undefined = item;
-    while (curr && curr.parentId) {
-      curr = fs.find(x => x.id === curr!.parentId);
-      if (curr && curr.id !== "root") {
-        segments.unshift(curr.name);
-      }
-    }
-    return "/" + (segments.length > 0 ? segments.join("/") + "/" : "") + item.name;
+    return item.id;
   };
 
   // Navigations
+  const fetchFileContent = async (filePath: string) => {
+    try {
+      const res = await fetch(`${API}/api/explorer/content?path=${encodeURIComponent(filePath)}`);
+      if (res.ok) {
+        const text = await res.text();
+        setEditingFileContent(text);
+        setEditingFileId(filePath);
+        setIsEditorOpen(true);
+        setIsEditorMinimized(false);
+        setIsEditorMaximized(false);
+      } else {
+        alert("Failed to load file content.");
+      }
+    } catch {
+      alert("Failed to connect to server.");
+    }
+  };
+
   const handleItemDoubleClick = (item: FileSystemItem) => {
     if (item.type === "directory") {
       setCurrentFolderId(item.id);
       setSelectedId(null);
       setSearchQuery("");
     } else {
-      setEditingFileId(item.id);
-      setEditingFileContent(item.content || "");
-      setIsEditorOpen(true);
-      setIsEditorMinimized(false);
-      setIsEditorMaximized(false);
+      fetchFileContent(item.id);
     }
   };
 
   const navigateUp = () => {
-    const currentFolder = fs.find(x => x.id === currentFolderId);
-    if (currentFolder && currentFolder.parentId) {
-      setCurrentFolderId(currentFolder.parentId);
-      setSelectedId(null);
+    if (currentFolderId === "/" || currentFolderId === "root") return;
+    const lastSlash = currentFolderId.lastIndexOf("/");
+    if (lastSlash === 0) {
+      setCurrentFolderId("/");
+    } else if (lastSlash > 0) {
+      setCurrentFolderId(currentFolderId.substring(0, lastSlash));
     }
+    setSelectedId(null);
   };
 
   // CRUD Actions
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createName.trim()) return;
 
-    // Check collision in target folder
-    const collision = fs.some(x => x.parentId === currentFolderId && x.name.toLowerCase() === createName.trim().toLowerCase());
-    if (collision) {
-      alert(`An item named "${createName.trim()}" already exists in this folder.`);
-      return;
+    try {
+      const res = await fetch(`${API}/api/explorer/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parentPath: currentFolderId,
+          name: createName.trim(),
+          type: createType
+        }),
+      });
+      if (res.ok) {
+        setIsCreateOpen(false);
+        setCreateName("");
+        fetchFiles(currentFolderId);
+      } else {
+        const errText = await res.text();
+        alert(`Error: ${errText}`);
+      }
+    } catch {
+      alert("Failed to connect to server.");
     }
-
-    const newId = `${createType === "directory" ? "dir" : "file"}-${Date.now()}`;
-    const newItem: FileSystemItem = {
-      id: newId,
-      name: createName.trim(),
-      type: createType,
-      parentId: currentFolderId,
-      size: createType === "file" ? 0 : undefined,
-      content: createType === "file" ? "" : undefined,
-      createdAt: new Date().toISOString().slice(0, 19).replace("T", " ")
-    };
-
-    setFs(prev => [...prev, newItem]);
-    setIsCreateOpen(false);
-    setCreateName("");
   };
 
-  const handleRenameSubmit = (e: React.FormEvent) => {
+  const handleRenameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!renameName.trim() || !selectedId) return;
 
-    const target = fs.find(x => x.id === selectedId);
-    if (!target) return;
-
-    const collision = fs.some(x => x.parentId === target.parentId && x.name.toLowerCase() === renameName.trim().toLowerCase() && x.id !== selectedId);
-    if (collision) {
-      alert(`An item named "${renameName.trim()}" already exists in this folder.`);
-      return;
+    try {
+      const res = await fetch(`${API}/api/explorer/rename`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: selectedId,
+          newName: renameName.trim()
+        }),
+      });
+      if (res.ok) {
+        setIsRenameOpen(false);
+        setRenameName("");
+        setSelectedId(null);
+        fetchFiles(currentFolderId);
+      } else {
+        const errText = await res.text();
+        alert(`Error: ${errText}`);
+      }
+    } catch {
+      alert("Failed to connect to server.");
     }
-
-    setFs(prev => prev.map(x => x.id === selectedId ? { ...x, name: renameName.trim() } : x));
-    setIsRenameOpen(false);
-    setRenameName("");
   };
 
-  const handleDelete = () => {
-    if (!selectedId || selectedId === "root") return;
+  const handleDelete = async () => {
+    if (!selectedId || selectedId === "root" || selectedId === "/") return;
     const targetItem = fs.find(x => x.id === selectedId);
     if (!targetItem) return;
 
     if (window.confirm(`Are you sure you want to delete "${targetItem.name}"?`)) {
-      const getDescendantIds = (id: string): string[] => {
-        const children = fs.filter(x => x.parentId === id);
-        let result = [id];
-        for (const child of children) {
-          result = [...result, ...getDescendantIds(child.id)];
+      try {
+        const res = await fetch(`${API}/api/explorer/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: selectedId }),
+        });
+        if (res.ok) {
+          setSelectedId(null);
+          fetchFiles(currentFolderId);
+        } else {
+          const errText = await res.text();
+          alert(`Error: ${errText}`);
         }
-        return result;
-      };
-
-      const idsToRemove = targetItem.type === "directory" ? getDescendantIds(selectedId) : [selectedId];
-      setFs(prev => prev.filter(x => !idsToRemove.includes(x.id)));
-      setSelectedId(null);
+      } catch {
+        alert("Failed to connect to server.");
+      }
     }
   };
 
   const handleOpenRename = () => {
-    if (!selectedId || selectedId === "root") return;
+    if (!selectedId || selectedId === "root" || selectedId === "/") return;
     const target = fs.find(x => x.id === selectedId);
     if (target) {
       setRenameName(target.name);
@@ -3314,129 +3338,102 @@ function ExplorerView() {
 
   // Clipboard operations
   const handleCopy = () => {
-    if (selectedId && selectedId !== "root") {
+    if (selectedId && selectedId !== "/" && selectedId !== "root") {
       setClipboard({ itemId: selectedId, action: "copy" });
     }
   };
 
   const handleCut = () => {
-    if (selectedId && selectedId !== "root") {
+    if (selectedId && selectedId !== "/" && selectedId !== "root") {
       setClipboard({ itemId: selectedId, action: "cut" });
     }
   };
 
-  const handlePaste = () => {
+  const handlePaste = async () => {
     if (!clipboard) return;
-    const targetItem = fs.find(item => item.id === clipboard.itemId);
-    if (!targetItem) return;
+    const targetPath = clipboard.itemId;
+    
+    // Prevent nesting cycle
+    if (currentFolderId === targetPath || currentFolderId.startsWith(targetPath + "/")) {
+      alert("Cannot paste a folder inside itself or its children!");
+      return;
+    }
 
-    if (clipboard.action === "cut") {
-      // Prevent nesting cycle
-      let temp: string | null = currentFolderId;
-      let cycle = false;
-      while (temp) {
-        if (temp === clipboard.itemId) {
-          cycle = true;
-          break;
-        }
-        const parent = fs.find(x => x.id === temp);
-        temp = parent ? parent.parentId : null;
+    try {
+      const endpoint = clipboard.action === "copy" ? "/api/explorer/copy" : "/api/explorer/move";
+      const res = await fetch(`${API}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          srcPath: targetPath,
+          destParentPath: currentFolderId
+        }),
+      });
+      if (res.ok) {
+        setClipboard(null);
+        fetchFiles(currentFolderId);
+      } else {
+        const errText = await res.text();
+        alert(`Error: ${errText}`);
       }
-      if (cycle) {
-        alert("Cannot paste a folder inside itself or its children!");
-        return;
-      }
-
-      // Check collision
-      const collision = fs.some(x => x.parentId === currentFolderId && x.name.toLowerCase() === targetItem.name.toLowerCase() && x.id !== targetItem.id);
-      if (collision) {
-        alert(`An item named "${targetItem.name}" already exists in the destination folder.`);
-        return;
-      }
-
-      setFs(prev => prev.map(x => x.id === clipboard.itemId ? { ...x, parentId: currentFolderId } : x));
-      setClipboard(null);
-    } else {
-      // Recursive copy
-      const duplicateItemRecursive = (itemId: string, newParentId: string | null, newName?: string): FileSystemItem[] => {
-        const itemToCopy = fs.find(x => x.id === itemId);
-        if (!itemToCopy) return [];
-
-        const nextId = `${itemToCopy.type === "directory" ? "dir" : "file"}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-        const finalName = newName || itemToCopy.name;
-
-        const currentCopy: FileSystemItem = {
-          ...itemToCopy,
-          id: nextId,
-          parentId: newParentId,
-          name: finalName,
-          createdAt: new Date().toISOString().slice(0, 19).replace("T", " ")
-        };
-
-        let result = [currentCopy];
-        if (itemToCopy.type === "directory") {
-          const children = fs.filter(x => x.parentId === itemId);
-          for (const child of children) {
-            const childCopies = duplicateItemRecursive(child.id, nextId);
-            result = [...result, ...childCopies];
-          }
-        }
-        return result;
-      };
-
-      // Collision handling
-      let finalName = targetItem.name;
-      let counter = 1;
-      while (fs.some(x => x.parentId === currentFolderId && x.name.toLowerCase() === finalName.toLowerCase())) {
-        const extIndex = targetItem.name.lastIndexOf(".");
-        if (targetItem.type === "file" && extIndex !== -1) {
-          const base = targetItem.name.substring(0, extIndex);
-          const ext = targetItem.name.substring(extIndex);
-          finalName = `${base} - Copy (${counter})${ext}`;
-        } else {
-          finalName = `${targetItem.name} - Copy (${counter})`;
-        }
-        counter++;
-      }
-
-      const copies = duplicateItemRecursive(clipboard.itemId, currentFolderId, finalName);
-      setFs(prev => [...prev, ...copies]);
+    } catch {
+      alert("Failed to connect to server.");
     }
   };
 
-  const handleSaveFileContent = () => {
+  const handleSaveFileContent = async () => {
     if (!editingFileId) return;
-    setFs(prev => prev.map(x => x.id === editingFileId ? { ...x, content: editingFileContent, size: parseFloat((editingFileContent.length / 1024).toFixed(2)) } : x));
-    setIsEditorOpen(false);
-    setEditingFileId(null);
+    try {
+      const res = await fetch(`${API}/api/explorer/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: editingFileId, content: editingFileContent }),
+      });
+      if (res.ok) {
+        setIsEditorOpen(false);
+        setEditingFileId(null);
+        fetchFiles(currentFolderId);
+      } else {
+        alert("Failed to save file.");
+      }
+    } catch {
+      alert("Failed to connect to server.");
+    }
   };
 
-  // Drag and drop files upload simulation
-  const handlePaneDrop = (e: React.DragEvent) => {
+  // Drag and drop files upload
+  const handlePaneDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOverPane(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const filesArray = Array.from(e.dataTransfer.files);
-      const newItems: FileSystemItem[] = filesArray.map((f, i) => ({
-        id: `file-${Date.now()}-${i}`,
-        name: f.name,
-        type: "file",
-        parentId: currentFolderId,
-        size: parseFloat((f.size / 1024).toFixed(2)),
-        content: `// Uploaded mock file: ${f.name}\n// Size: ${f.size} bytes`,
-        createdAt: new Date().toISOString().slice(0, 19).replace("T", " ")
-      }));
-      setFs(prev => [...prev, ...newItems]);
+      const formData = new FormData();
+      formData.append("parentPath", currentFolderId);
+      filesArray.forEach(f => {
+        formData.append("files", f);
+      });
+
+      try {
+        const res = await fetch(`${API}/api/explorer/upload`, {
+          method: "POST",
+          body: formData,
+        });
+        if (res.ok) {
+          fetchFiles(currentFolderId);
+        } else {
+          alert("Failed to upload files.");
+        }
+      } catch {
+        alert("Failed to upload files.");
+      }
     }
   };
 
   // Selection list calculation
-  const currentItems = fs.filter(item => item.parentId === currentFolderId);
-  const filteredItems = searchQuery.trim() !== ""
-    ? fs.filter(item => item.id !== "root" && item.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    : currentItems;
+  const filteredItems = fs;
 
   const selectedItem = fs.find(x => x.id === selectedId);
+
 
   // Styles
   const layoutStyle = {
@@ -3719,22 +3716,22 @@ function ExplorerView() {
         {/* Left pane: Quick Navigation bookmarks */}
         <div style={leftPaneStyle}>
           <span className="font-heading" style={{ fontSize: "0.75rem", letterSpacing: "1px", textTransform: "uppercase" }}>Quick Access</span>
-          <div style={pathShortcutStyle(currentFolderId === "root")} onClick={() => { setCurrentFolderId("root"); setSelectedId(null); setSearchQuery(""); }}>
+          <div style={pathShortcutStyle(currentFolderId === "/" || currentFolderId === "root")} onClick={() => { setCurrentFolderId("/"); setSelectedId(null); setSearchQuery(""); }}>
             <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> ROOT (/)
           </div>
-          <div style={pathShortcutStyle(currentFolderId === "dir-src")} onClick={() => { setCurrentFolderId("dir-src"); setSelectedId(null); setSearchQuery(""); }}>
+          <div style={pathShortcutStyle(currentFolderId === "/frontend/src" || currentFolderId === "dir-src")} onClick={() => { setCurrentFolderId("/frontend/src"); setSelectedId(null); setSearchQuery(""); }}>
             <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> src/
           </div>
-          <div style={pathShortcutStyle(currentFolderId === "dir-components")} onClick={() => { setCurrentFolderId("dir-components"); setSelectedId(null); setSearchQuery(""); }}>
+          <div style={pathShortcutStyle(currentFolderId === "/frontend/src/components" || currentFolderId === "dir-components")} onClick={() => { setCurrentFolderId("/frontend/src/components"); setSelectedId(null); setSearchQuery(""); }}>
             <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> components/
           </div>
-          <div style={pathShortcutStyle(currentFolderId === "dir-public")} onClick={() => { setCurrentFolderId("dir-public"); setSelectedId(null); setSearchQuery(""); }}>
+          <div style={pathShortcutStyle(currentFolderId === "/frontend/public" || currentFolderId === "dir-public")} onClick={() => { setCurrentFolderId("/frontend/public"); setSelectedId(null); setSearchQuery(""); }}>
             <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> public/
           </div>
 
           <div style={{ marginTop: "auto", borderTop: "2px solid black", paddingTop: "8px" }}>
             <div className="font-mono" style={{ fontSize: "0.6rem", color: "#64748b", lineHeight: 1.4 }}>
-              <div><strong>Clipboard:</strong> {clipboard ? `${clipboard.action.toUpperCase()} of ${fs.find(x => x.id === clipboard.itemId)?.name}` : "Empty"}</div>
+              <div><strong>Clipboard:</strong> {clipboard ? `${clipboard.action.toUpperCase()} of ${getBaseName(clipboard.itemId)}` : "Empty"}</div>
               <div style={{ marginTop: "4px" }}><strong>Selected:</strong> {selectedItem ? selectedItem.name : "None"}</div>
             </div>
           </div>
@@ -3759,7 +3756,7 @@ function ExplorerView() {
               <button 
                 className="btn" 
                 onClick={navigateUp}
-                disabled={currentFolderId === "root" || searchQuery !== ""}
+                disabled={currentFolderId === "/" || currentFolderId === "root" || searchQuery !== ""}
                 style={{
                   padding: "4px 8px",
                   boxShadow: "2px 2px 0px black",

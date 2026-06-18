@@ -100,6 +100,17 @@ func main() {
 	mux.HandleFunc("/api/deploy/projects", handler.DeployProjects)
 	mux.HandleFunc("/api/deploy/projects/", handler.DeployProjectByID)
 
+	// File Explorer Endpoints
+	mux.HandleFunc("/api/explorer/list", handler.ExplorerList)
+	mux.HandleFunc("/api/explorer/content", handler.ExplorerGetContent)
+	mux.HandleFunc("/api/explorer/save", handler.ExplorerSaveContent)
+	mux.HandleFunc("/api/explorer/create", handler.ExplorerCreate)
+	mux.HandleFunc("/api/explorer/rename", handler.ExplorerRename)
+	mux.HandleFunc("/api/explorer/delete", handler.ExplorerDelete)
+	mux.HandleFunc("/api/explorer/copy", handler.ExplorerCopy)
+	mux.HandleFunc("/api/explorer/move", handler.ExplorerMove)
+	mux.HandleFunc("/api/explorer/upload", handler.ExplorerUpload)
+
 	srv := http.Server{
 		Addr:    ":" + port,
 		Handler: cors(mux),
