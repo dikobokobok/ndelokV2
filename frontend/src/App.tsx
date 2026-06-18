@@ -3,7 +3,7 @@ import { Activity, Cpu, HardDrive, Network, Package, Terminal, Settings, LayoutD
 import { AuthGate } from "./AuthPages";
 import "xterm/css/xterm.css";
 
-const API = "http://localhost:1235";
+const API = "http://127.0.0.1:1235";
 
 export default function App() {
   const SESSION_KEY = "ndelok-session";
@@ -686,7 +686,7 @@ function PluginsView() {
     let mounted = true;
     let timer: ReturnType<typeof setTimeout>;
     const poll = () => {
-      fetch("http://localhost:1235/api/plugins/zerotier/status")
+      fetch("http://127.0.0.1:1235/api/plugins/zerotier/status")
         .then(res => res.json())
         .then(data => {
           if (!mounted) return;
@@ -734,7 +734,7 @@ function PluginsView() {
     let mounted = true;
     let timer: ReturnType<typeof setTimeout>;
     const poll = () => {
-      fetch("http://localhost:1235/api/plugins/tmux/status")
+      fetch("http://127.0.0.1:1235/api/plugins/tmux/status")
         .then(res => res.json())
         .then(data => {
           if (!mounted) return;
@@ -970,10 +970,10 @@ function PluginsView() {
                       setIsMaximized(false);
                     } else if (action === "INSTALL" && isZerotier) {
                       setPluginStatuses(prev => ({ ...prev, zerotier: "INSTALLING..." }));
-                      fetch("http://localhost:1235/api/plugins/zerotier/install", { method: "POST" })
+                      fetch("http://127.0.0.1:1235/api/plugins/zerotier/install", { method: "POST" })
                         .then(() => {
                           const poll = setInterval(() => {
-                            fetch("http://localhost:1235/api/plugins/zerotier/status")
+                            fetch("http://127.0.0.1:1235/api/plugins/zerotier/status")
                               .then(res => res.json())
                               .then(data => {
                                 if (data.installed) {
@@ -990,12 +990,12 @@ function PluginsView() {
                         });
                     } else if (action === "INSTALL" && plugin.id === "tmux") {
                       setPluginStatuses(prev => ({ ...prev, tmux: "INSTALLING..." }));
-                      fetch("http://localhost:1235/api/plugins/tmux/install", { method: "POST" })
+                      fetch("http://127.0.0.1:1235/api/plugins/tmux/install", { method: "POST" })
                         .then(res => res.json())
                         .then(data => {
                           if (data.success) {
                             const poll = setInterval(() => {
-                              fetch("http://localhost:1235/api/plugins/tmux/status")
+                              fetch("http://127.0.0.1:1235/api/plugins/tmux/status")
                                 .then(res => res.json())
                                 .then(d => {
                                   if (d.installed) {
@@ -1017,7 +1017,7 @@ function PluginsView() {
                       setIsTmuxSessionListOpen(true);
                     } else if (action === "REFRESH" && plugin.id === "tmux") {
                       setPluginStatuses(prev => ({ ...prev, tmux: "REFRESHING" }));
-                      fetch("http://localhost:1235/api/plugins/tmux/status")
+                      fetch("http://127.0.0.1:1235/api/plugins/tmux/status")
                         .then(res => res.json())
                         .then(data => {
                           setInstalledPlugins(prev => ({ ...prev, tmux: data.installed }));
@@ -1027,7 +1027,7 @@ function PluginsView() {
                         .catch(() => setPluginStatuses(prev => ({ ...prev, tmux: "OFFLINE" })));
                     } else if (action === "ENABLE" && plugin.id === "zerotier") {
                       setPluginStatuses(prev => ({ ...prev, zerotier: "ENABLING..." }));
-                      fetch("http://localhost:1235/api/plugins/zerotier/service", {
+                      fetch("http://127.0.0.1:1235/api/plugins/zerotier/service", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ action: "start" })
@@ -1043,7 +1043,7 @@ function PluginsView() {
                         .catch(() => setPluginStatuses(prev => ({ ...prev, zerotier: "OFFLINE" })));
                     } else if (action === "DISABLE" && plugin.id === "zerotier") {
                       setPluginStatuses(prev => ({ ...prev, zerotier: "DISABLING..." }));
-                      fetch("http://localhost:1235/api/plugins/zerotier/service", {
+                      fetch("http://127.0.0.1:1235/api/plugins/zerotier/service", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ action: "stop" })
@@ -1063,7 +1063,7 @@ function PluginsView() {
                         alert("No network to leave");
                         return;
                       }
-                      fetch("http://localhost:1235/api/plugins/zerotier/leave", {
+                      fetch("http://127.0.0.1:1235/api/plugins/zerotier/leave", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ networkId })
@@ -1322,7 +1322,7 @@ function PluginsView() {
                       className="btn"
                       disabled={isToggleDisabled}
                       onClick={() => {
-                        fetch("http://localhost:1235/api/plugins/zerotier/service", {
+                        fetch("http://127.0.0.1:1235/api/plugins/zerotier/service", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ action: toggleAction })
@@ -1357,7 +1357,7 @@ function PluginsView() {
                           alert("No network to leave");
                           return;
                         }
-                        fetch("http://localhost:1235/api/plugins/zerotier/leave", {
+                        fetch("http://127.0.0.1:1235/api/plugins/zerotier/leave", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ networkId })
@@ -1410,7 +1410,7 @@ function PluginsView() {
                     disabled={zerotierIdInput.length !== 16}
                     onClick={() => {
                       if (zerotierIdInput.length === 16) {
-                        fetch("http://localhost:1235/api/plugins/zerotier/join", {
+                        fetch("http://127.0.0.1:1235/api/plugins/zerotier/join", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ networkId: zerotierIdInput })
@@ -1498,7 +1498,7 @@ function PluginsView() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          fetch("http://localhost:1235/api/plugins/tmux/session", {
+                          fetch("http://127.0.0.1:1235/api/plugins/tmux/session", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ name: s.name })
@@ -1509,7 +1509,7 @@ function PluginsView() {
                                 alert("Failed: " + data.message);
                                 return;
                               }
-                              return fetch("http://localhost:1235/api/plugins/tmux/status");
+                              return fetch("http://127.0.0.1:1235/api/plugins/tmux/status");
                             })
                             .then(res => res && res.json())
                             .then(data => {
@@ -1600,7 +1600,7 @@ function PluginsView() {
                   onClick={() => {
                     const name = tmuxNewSessionName.trim();
                     if (!name) return;
-                    fetch("http://localhost:1235/api/plugins/tmux/new", {
+                    fetch("http://127.0.0.1:1235/api/plugins/tmux/new", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ name })
@@ -1611,7 +1611,7 @@ function PluginsView() {
                           alert("Failed: " + data.message);
                           return;
                         }
-                        return fetch("http://localhost:1235/api/plugins/tmux/status");
+                        return fetch("http://127.0.0.1:1235/api/plugins/tmux/status");
                       })
                       .then(res => res && res.json())
                       .then(data => {
@@ -1734,7 +1734,7 @@ function TmuxTerminalPopup({ sessionName, onClose, isMinimized, isMaximized, onM
       termRef.current = term;
       fitRef.current = fitAddon;
 
-      const ws = new WebSocket(`ws://localhost:1235/api/plugins/tmux/terminal?session=${encodeURIComponent(sessionName)}`);
+      const ws = new WebSocket(`ws://127.0.0.1:1235/api/plugins/tmux/terminal?session=${encodeURIComponent(sessionName)}`);
       ws.onopen = () => { setConnected(true); setStatusText("CONNECTED"); term.focus(); };
       ws.onmessage = (e) => { term.clear(); term.write(e.data); };
       ws.onerror = () => { setConnected(false); setStatusText("ERR"); try { term.write("\r\n[Connection error]\r\n"); } catch {} };
@@ -1833,13 +1833,7 @@ function TmuxTerminalPopup({ sessionName, onClose, isMinimized, isMaximized, onM
 }
 
 function DeployView() {
-  const [projects, setProjects] = useState<any[]>([
-    { id: "p1", name: "NDELOK DASHBOARD", port: "1234", status: "RUNNING", cpu: 2.5, ram: 128, storage: 420, deployMethod: "github", githubLink: "https://github.com/dikobokobok/ndelokV2.git", folderPath: "", buildCommand: "npm install && npm run build", startCommand: "npm run dev" },
-    { id: "p2", name: "API GATEWAY", port: "8080", status: "RUNNING", cpu: 1.1, ram: 96, storage: 210, deployMethod: "github", githubLink: "https://github.com/dikobokobok/gateway.git", folderPath: "", buildCommand: "npm install", startCommand: "node index.js" },
-    { id: "p3", name: "AUTH SERVICE", port: "8081", status: "STOPPED", cpu: 0, ram: 0, storage: 180, deployMethod: "folder", githubLink: "", folderPath: "/var/www/auth", buildCommand: "npm install && npm run build", startCommand: "node dist/auth.js" },
-    { id: "p4", name: "DATABASE POSTGRES", port: "5432", status: "RUNNING", cpu: 0.8, ram: 512, storage: 14200, deployMethod: "folder", githubLink: "", folderPath: "C:\\postgres\\data", buildCommand: "", startCommand: "pg_ctl start" },
-    { id: "p5", name: "PAYMENT SYSTEM", port: "3002", status: "STOPPED", cpu: 0, ram: 0, storage: 350, deployMethod: "github", githubLink: "https://github.com/payments/processor.git", folderPath: "", buildCommand: "pip install -r requirements.txt", startCommand: "python app.py" }
-  ]);
+  const [projects, setProjects] = useState<any[]>([]);
 
   // States for Deploy Modal
   const [isDeployOpen, setIsDeployOpen] = useState(false);
@@ -1851,7 +1845,7 @@ function DeployView() {
   const [buildCommand, setBuildCommand] = useState("npm install && npm run build");
   const [startCommand, setStartCommand] = useState("npm run start");
   const [deployStep, setDeployStep] = useState<"form" | "logs">("form");
-  const [deployLogs, setDeployLogs] = useState<string[]>([]);
+  const [deployLogs, setDeployLogs] = useState<string>("");
   const [isDeployLogsFinished, setIsDeployLogsFinished] = useState(false);
   const [uploadType, setUploadType] = useState<"path" | "upload">("upload");
   const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
@@ -1878,44 +1872,48 @@ function DeployView() {
 
   // Stats
   const totalProjects = projects.length;
-  const runningProjects = projects.filter(p => p.status === "RUNNING").length;
-  const stoppedProjects = projects.filter(p => p.status === "STOPPED").length;
+  const runningProjects = projects.filter(p => p.status === "RUNNING" || p.status === "DEPLOYING").length;
+  const stoppedProjects = projects.filter(p => p.status === "STOPPED" || p.status === "ERROR").length;
 
-  // Real-time CPU/RAM simulation for running services
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setProjects(prev => prev.map(p => {
-        if (p.status === "RUNNING") {
-          const deltaCpu = (Math.random() * 2 - 1);
-          const nextCpu = Math.max(0.1, parseFloat((p.cpu + deltaCpu).toFixed(1)));
-          const deltaRam = Math.floor(Math.random() * 11 - 5);
-          const nextRam = Math.max(16, p.ram + deltaRam);
-          return { ...p, cpu: nextCpu, ram: nextRam };
+  // Fetch projects from backend on mount + polling
+  const fetchProjects = () => {
+    fetch("http://127.0.0.1:1235/api/deploy/projects")
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setProjects(data.map(p => ({
+            ...p,
+            // Map backend field names to what the UI expects
+            port: p.portDomain,
+            deployMethod: p.method,
+            githubLink: p.githubLink,
+            folderPath: p.folderPath,
+            buildCommand: p.buildCmd,
+            startCommand: p.startCmd,
+          })));
         }
-        return p;
-      }));
-    }, 1500);
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchProjects();
+    const timer = setInterval(fetchProjects, 5000);
     return () => clearInterval(timer);
   }, []);
 
-  const handleToggleStatus = (id: string) => {
-    setProjects(prev => prev.map(p => {
-      if (p.id === id) {
-        const nextStatus = p.status === "RUNNING" ? "STOPPED" : "RUNNING";
-        return {
-          ...p,
-          status: nextStatus,
-          cpu: nextStatus === "RUNNING" ? parseFloat((Math.random() * 5 + 1).toFixed(1)) : 0,
-          ram: nextStatus === "RUNNING" ? Math.floor(Math.random() * 200 + 64) : 0
-        };
-      }
-      return p;
-    }));
+  const handleToggleStatus = (id: number) => {
+    fetch(`http://127.0.0.1:1235/api/deploy/projects/${id}/toggle`, { method: "POST" })
+      .then(res => res.json())
+      .then(() => fetchProjects())
+      .catch(() => alert("Failed to toggle service"));
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this project?")) {
-      setProjects(prev => prev.filter(p => p.id !== id));
+  const handleDelete = (id: number) => {
+    if (window.confirm("Are you sure you want to delete this project? The workspace folder will remain on disk.")) {
+      fetch(`http://127.0.0.1:1235/api/deploy/projects/${id}`, { method: "DELETE" })
+        .then(() => fetchProjects())
+        .catch(() => alert("Failed to delete project"));
     }
   };
 
@@ -1997,68 +1995,51 @@ function DeployView() {
     e.preventDefault();
     if (!projectName || !projectPort) return;
 
-    if (deployMethod === "folder" && uploadType === "upload" && uploadedFiles.length === 0) {
-      alert("Please select at least one file or folder to upload!");
-      return;
-    }
-
     setDeployStep("logs");
-    setDeployLogs([]);
+    setDeployLogs("");
     setIsDeployLogsFinished(false);
 
-    const newProj = {
-      id: `p-${Date.now()}`,
-      name: projectName.toUpperCase(),
-      port: projectPort,
-      status: "RUNNING",
-      cpu: parseFloat((Math.random() * 4 + 1).toFixed(1)),
-      ram: Math.floor(Math.random() * 150 + 64),
-      storage: Math.floor(Math.random() * 500 + 100),
-      deployMethod,
-      githubLink: deployMethod === "github" ? githubLink : "",
-      folderPath: deployMethod === "folder" ? (uploadType === "path" ? folderPath : `[UPLOADED: ${uploadedFiles.length} items]`) : "",
-      buildCommand,
-      startCommand
-    };
-
-    setProjects(prev => [...prev, newProj]);
-
-    const logSequence = [
-      `[NDELOK-DEPLOY] 01:32:45 - Initializing deployment sequence for "${projectName.toUpperCase()}"...`,
-      deployMethod === "github" 
-        ? `[NDELOK-DEPLOY] 01:32:46 - Import method: GITHUB REPOSITORY (${githubLink})`
-        : uploadType === "upload"
-          ? `[NDELOK-DEPLOY] 01:32:46 - Import method: LOCAL FILES UPLOAD (${uploadedFiles.length} files selected)`
-          : `[NDELOK-DEPLOY] 01:32:46 - Import method: LOCAL FILE FOLDER PATH (${folderPath})`,
-      
-      deployMethod === "github"
-        ? `[NDELOK-DEPLOY] 01:32:47 - Pulling codebase source files from GitHub...`
-        : uploadType === "upload"
-          ? `[NDELOK-DEPLOY] 01:32:47 - Uploading files to server path: /var/ndelok/uploads/${projectName.toUpperCase()}...`
-          : `[NDELOK-DEPLOY] 01:32:47 - Verifying local directory path exists...`,
-
-      uploadType === "upload" && deployMethod === "folder"
-        ? `[NDELOK-DEPLOY] 01:32:48 - Upload completed. Stored ${uploadedFiles.length} items (${(uploadedFiles.reduce((acc, f) => acc + f.size, 0) / 1024).toFixed(1)} KB) on server.`
-        : `[NDELOK-DEPLOY] 01:32:48 - Source codebase validation completed successfully.`,
-
-      `[NDELOK-DEPLOY] 01:32:49 - Executing build install command: "${buildCommand || "N/A"}"`,
-      `[NDELOK-DEPLOY] 01:32:50 - Build command completed successfully. 0 errors, 2 warnings.`,
-      `[NDELOK-DEPLOY] 01:32:51 - Spawning daemon start sequence command: "${startCommand}"`,
-      `[NDELOK-DEPLOY] 01:32:52 - Service is online and successfully bound to port/domain ${projectPort}!`,
-      `[SUCCESS] 01:32:52 - Deployment completed. Service is fully operational.`
-    ];
-
-    let currentLogIndex = 0;
-    const interval = setInterval(() => {
-      if (currentLogIndex < logSequence.length) {
-        const nextLine = logSequence[currentLogIndex];
-        setDeployLogs(prev => [...prev, nextLine]);
-        currentLogIndex++;
-      } else {
-        clearInterval(interval);
+    // 1. Create project in DB
+    fetch("http://127.0.0.1:1235/api/deploy/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: projectName,
+        portDomain: projectPort,
+        method: deployMethod,
+        githubLink: deployMethod === "github" ? githubLink : "",
+        folderPath: deployMethod === "folder" ? (uploadType === "path" ? folderPath : "") : "",
+        buildCmd: buildCommand,
+        startCmd: startCommand,
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (!data.success) {
+        setDeployLogs(`[ERROR] Failed to create project: ${data.message}\n`);
         setIsDeployLogsFinished(true);
+        return;
       }
-    }, 600);
+      const projectId = data.project.id;
+
+      // 2. Open WebSocket to stream deploy logs
+      const ws = new WebSocket(`ws://127.0.0.1:1235/api/deploy/projects/${projectId}/stream`);
+      ws.onmessage = (event) => {
+        setDeployLogs(prev => prev + event.data);
+      };
+      ws.onclose = () => {
+        setIsDeployLogsFinished(true);
+        fetchProjects();
+      };
+      ws.onerror = () => {
+        setDeployLogs(prev => prev + "[ERROR] WebSocket connection failed.\n");
+        setIsDeployLogsFinished(true);
+      };
+    })
+    .catch(err => {
+      setDeployLogs(`[ERROR] Network error: ${err.message}\n`);
+      setIsDeployLogsFinished(true);
+    });
   };
 
   const handleOpenEdit = (proj: any) => {
@@ -2076,21 +2057,21 @@ function DeployView() {
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingId || !editName || !editPort) return;
-    setProjects(prev => prev.map(p => {
-      if (p.id === editingId) {
-        return {
-          ...p,
-          name: editName.toUpperCase(),
-          port: editPort,
-          deployMethod: editMethod,
-          githubLink: editMethod === "github" ? editGithubLink : "",
-          folderPath: editMethod === "folder" ? editFolderPath : "",
-          buildCommand: editBuildCommand,
-          startCommand: editStartCommand
-        };
-      }
-      return p;
-    }));
+    fetch(`http://127.0.0.1:1235/api/deploy/projects/${editingId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: editName,
+        portDomain: editPort,
+        method: editMethod,
+        githubLink: editMethod === "github" ? editGithubLink : "",
+        folderPath: editMethod === "folder" ? editFolderPath : "",
+        buildCmd: editBuildCommand,
+        startCmd: editStartCommand,
+      })
+    })
+    .then(() => fetchProjects())
+    .catch(() => alert("Failed to save changes"));
     setIsEditOpen(false);
     setEditingId(null);
   };
@@ -2252,7 +2233,7 @@ function DeployView() {
           }}>
             {/* Top Indicator bar */}
             <div style={{ 
-              backgroundColor: proj.status === "RUNNING" ? "var(--system-green)" : "var(--system-red)", 
+              backgroundColor: proj.status === "RUNNING" ? "var(--system-green)" : proj.status === "DEPLOYING" ? "var(--system-yellow)" : "var(--system-red)", 
               borderBottom: "3px solid black", 
               padding: "6px var(--space-sm)",
               display: "flex",
@@ -2264,7 +2245,7 @@ function DeployView() {
               </span>
               <span className="badge" style={{ 
                 backgroundColor: "black", 
-                color: proj.status === "RUNNING" ? "var(--system-green)" : "var(--system-red)",
+                color: proj.status === "RUNNING" ? "var(--system-green)" : proj.status === "DEPLOYING" ? "var(--system-yellow)" : "var(--system-red)",
                 borderColor: "black",
                 fontSize: "0.6rem",
                 padding: "0px 3px"
@@ -2295,18 +2276,18 @@ function DeployView() {
                 marginTop: "auto"
               }} className="font-mono">
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
-                  <span>CPU USED:</span>
-                  <span style={{ fontWeight: 700 }}>{proj.cpu}%</span>
+                  <span>METHOD:</span>
+                  <span style={{ fontWeight: 700 }}>{(proj.deployMethod || proj.method || "N/A").toUpperCase()}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
-                  <span>RAM USED:</span>
-                  <span style={{ fontWeight: 700 }}>{proj.ram} MB</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
-                  <span>DISK USED:</span>
-                  <span style={{ fontWeight: 700 }}>
-                    {proj.storage >= 1000 ? `${(proj.storage / 1000).toFixed(1)} GB` : `${proj.storage} MB`}
+                  <span>PID:</span>
+                  <span style={{ fontWeight: 700, color: proj.pid > 0 ? "var(--system-green)" : "#94a3b8" }}>
+                    {proj.pid > 0 ? proj.pid : "—"}
                   </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
+                  <span>CREATED:</span>
+                  <span style={{ fontWeight: 700 }}>{proj.createdAt ? proj.createdAt.split("T")[0] : "—"}</span>
                 </div>
               </div>
             </div>
@@ -2324,16 +2305,19 @@ function DeployView() {
               <button 
                 className="btn"
                 onClick={() => handleToggleStatus(proj.id)}
+                disabled={proj.status === "DEPLOYING"}
                 style={{ 
                   padding: "2px 6px", 
                   fontSize: "0.65rem", 
                   boxShadow: "1.5px 1.5px 0px black",
-                  backgroundColor: proj.status === "RUNNING" ? "var(--system-red)" : "var(--system-green)",
+                  backgroundColor: (proj.status === "RUNNING" || proj.status === "DEPLOYING") ? "var(--system-red)" : "var(--system-green)",
                   color: "black",
-                  fontWeight: 700
+                  fontWeight: 700,
+                  opacity: proj.status === "DEPLOYING" ? 0.5 : 1,
+                  cursor: proj.status === "DEPLOYING" ? "not-allowed" : "pointer"
                 }}
               >
-                {proj.status === "RUNNING" ? "STOP" : "START"}
+                {(proj.status === "RUNNING" || proj.status === "DEPLOYING") ? "STOP" : "START"}
               </button>
 
               {/* Edit, logs, delete action buttons */}
@@ -2847,7 +2831,7 @@ function DeployView() {
                   lineHeight: 1.4,
                   whiteSpace: "pre-wrap"
                 }}>
-                  {deployLogs.join("\n")}
+                  {deployLogs}
                   {!isDeployLogsFinished && (
                     <span style={{ 
                       display: "inline-block", 
@@ -3040,61 +3024,95 @@ function DeployView() {
 
       {/* Logs Modal */}
       {isLogsOpen && loggingProject && (
-        <>
-          <div onClick={() => setIsLogsOpen(false)} style={overlayStyle} />
-          <div style={{ ...modalStyle, width: "550px", maxHeight: "85vh", overflowY: "auto" }}>
-            <div style={{ ...titleBarStyle, backgroundColor: "black", color: "white" }}>
-              <span className="font-heading" style={{ fontSize: "0.85rem", color: "white", display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
-                LOGS: {loggingProject.name} (PORT {loggingProject.port})
-              </span>
-              <button onClick={() => setIsLogsOpen(false)} style={{ ...closeBtnStyle, color: "white", backgroundColor: "#334155" }}>✕</button>
-            </div>
-            <div style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-sm)" }}>
-              {/* Build & Daemon configurations description */}
-              <div style={{ border: "2px solid black", padding: "6px 10px", backgroundColor: "var(--secondary-bg)", fontSize: "0.65rem" }} className="font-mono">
-                <div><strong>DEPLOY METHOD:</strong> {loggingProject.deployMethod?.toUpperCase() || "N/A"}</div>
-                {loggingProject.deployMethod === "github" ? (
-                  <div style={{ wordBreak: "break-all" }}><strong>GITHUB LINK:</strong> {loggingProject.githubLink}</div>
-                ) : (
-                  <div><strong>FOLDER PATH:</strong> {loggingProject.folderPath || "N/A"}</div>
-                )}
-                <div><strong>BUILD CMD:</strong> {loggingProject.buildCommand || "N/A"}</div>
-                <div><strong>START CMD:</strong> {loggingProject.startCommand || "N/A"}</div>
-              </div>
-
-              <div className="font-mono" style={{ 
-                backgroundColor: "#000000", 
-                color: "#22c55e", 
-                padding: "12px", 
-                fontSize: "0.7rem", 
-                height: "180px", 
-                overflowY: "auto",
-                border: "2px solid black",
-                boxShadow: "inset 0 0 10px rgba(0,0,0,0.8)",
-                lineHeight: 1.4,
-                whiteSpace: "pre-wrap"
-              }}>
-                {`[SYSTEM] 2026-06-16 22:30:00 - Initializing deployment core from ${loggingProject.deployMethod}...
-[SYSTEM] 2026-06-16 22:30:01 - Pulling codebase source...
-[SYSTEM] 2026-06-16 22:30:02 - Executing build installer: "${loggingProject.buildCommand || "N/A"}"
-[SYSTEM] 2026-06-16 22:30:03 - Starting daemon sequence: "${loggingProject.startCommand || "N/A"}"
-[SYSTEM] 2026-06-16 22:30:04 - Binding service ${loggingProject.name} to port/domain ${loggingProject.port}.
-${loggingProject.status === "RUNNING" ? `[INFO] 2026-06-16 22:30:05 - Connection established. Service listening on HTTP.
-[METRICS] 2026-06-16 22:31:15 - CPU Load: ${loggingProject.cpu}% | RAM: ${loggingProject.ram}MB
-[SYSTEM] 2026-06-16 22:35:00 - Healthcheck OK.` : `[WARN] 2026-06-16 22:31:00 - SIGTERM signal received. Stopping gracefully...
-[SYSTEM] 2026-06-16 22:31:02 - Service stopped.`}`}
-              </div>
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button className="btn" onClick={() => setIsLogsOpen(false)} style={{ ...modalCancelStyle, backgroundColor: "black", color: "white" }}>
-                  CLOSE
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
+        <ProjectLogsModal project={loggingProject} onClose={() => setIsLogsOpen(false)} />
       )}
     </div>
+  );
+}
+
+// ───────── Project Logs Modal (real WebSocket stream) ─────────
+function ProjectLogsModal({ project, onClose }: { project: any; onClose: () => void }) {
+  const [logs, setLogs] = useState<string[]>([]);
+  const [connected, setConnected] = useState(false);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const ws = new WebSocket(`ws://127.0.0.1:1235/api/deploy/projects/${project.id}/logs`);
+    ws.onopen = () => setConnected(true);
+    ws.onmessage = (e) => setLogs(prev => [...prev, e.data]);
+    ws.onerror = () => setLogs(prev => [...prev, "[ERROR] WebSocket connection failed"]);
+    ws.onclose = () => setConnected(false);
+    return () => ws.close();
+  }, [project.id]);
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  const overlayStyle: React.CSSProperties = {
+    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)", zIndex: 999
+  };
+
+  return (
+    <>
+      <div onClick={onClose} style={overlayStyle} />
+      <div style={{
+        position: "fixed", top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        width: "580px", maxWidth: "95%", maxHeight: "85vh",
+        backgroundColor: "white", border: "3px solid black",
+        boxShadow: "8px 8px 0px black", zIndex: 1000,
+        display: "flex", flexDirection: "column"
+      }}>
+        {/* Title bar */}
+        <div style={{ borderBottom: "3px solid black", padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "black", color: "white" }}>
+          <span className="font-heading" style={{ fontSize: "0.85rem", color: "white", display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: connected ? "var(--system-green)" : "#94a3b8", display: "inline-block" }} />
+            LOGS: {project.name} (PORT {project.port})
+          </span>
+          <button onClick={onClose} style={{ width: "20px", height: "20px", border: "1.5px solid #334155", backgroundColor: "#334155", color: "white", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}>✕</button>
+        </div>
+
+        {/* Config info */}
+        <div style={{ border: "none", borderBottom: "3px solid black", padding: "6px 12px", backgroundColor: "#f8fafc", fontSize: "0.65rem" }} className="font-mono">
+          <div><strong>DEPLOY METHOD:</strong> {project.deployMethod?.toUpperCase() || "N/A"}</div>
+          {project.deployMethod === "github" ? (
+            <div style={{ wordBreak: "break-all" }}><strong>GITHUB LINK:</strong> {project.githubLink}</div>
+          ) : (
+            <div><strong>FOLDER PATH:</strong> {project.folderPath || "N/A"}</div>
+          )}
+          <div><strong>BUILD CMD:</strong> {project.buildCommand || "N/A"}</div>
+          <div><strong>START CMD:</strong> {project.startCommand || "N/A"}</div>
+        </div>
+
+        {/* Log output */}
+        <div className="font-mono" style={{
+          backgroundColor: "#000000", color: "#22c55e",
+          padding: "12px", fontSize: "0.7rem",
+          flex: 1, minHeight: "240px", maxHeight: "400px", overflowY: "auto",
+          border: "none", lineHeight: 1.4, whiteSpace: "pre-wrap"
+        }}>
+          {logs.length === 0 ? (
+            <span style={{ color: "#64748b" }}>{connected ? "Waiting for log output..." : "Connecting..."}</span>
+          ) : (
+            logs.map((line, i) => <div key={i}>{line}</div>)
+          )}
+          <div ref={logsEndRef} />
+        </div>
+
+        {/* Footer */}
+        <div style={{ borderTop: "3px solid black", padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "#f8fafc" }}>
+          <span className="font-mono" style={{ fontSize: "0.6rem", color: "#64748b", display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: connected ? "var(--system-green)" : "#94a3b8", display: "inline-block" }} />
+            {connected ? "LIVE" : "DISCONNECTED"} — {logs.length} lines
+          </span>
+          <button className="btn" onClick={onClose} style={{ padding: "6px 12px", fontSize: "0.75rem", backgroundColor: "black", color: "white", boxShadow: "3px 3px 0px black" }}>
+            CLOSE
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -4204,7 +4222,7 @@ function LogsTermView() {
       termRef.current = term;
       fitRef.current = fitAddon;
 
-      const ws = new WebSocket("ws://localhost:1235/api/terminal");
+      const ws = new WebSocket("ws://127.0.0.1:1235/api/terminal");
       ws.onopen = () => { setTermConnected(true); term.focus(); };
       ws.onmessage = (e) => { term.write(e.data); };
       ws.onerror = () => { setTermConnected(false); term.writeln("\r\n\x1b[31m[Connection error]\x1b[0m\r\n"); };

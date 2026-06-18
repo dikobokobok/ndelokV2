@@ -54,6 +54,24 @@ func Init(path string) error {
 		return fmt.Errorf("seed zerotier_config: %w", err)
 	}
 
+	if _, err = DB.Exec(`CREATE TABLE IF NOT EXISTS projects (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		name        TEXT NOT NULL UNIQUE,
+		port_domain TEXT NOT NULL DEFAULT '',
+		method      TEXT NOT NULL DEFAULT 'github',
+		github_link TEXT NOT NULL DEFAULT '',
+		folder_path TEXT NOT NULL DEFAULT '',
+		build_cmd   TEXT NOT NULL DEFAULT '',
+		start_cmd   TEXT NOT NULL DEFAULT '',
+		status      TEXT NOT NULL DEFAULT 'STOPPED',
+		pid         INTEGER NOT NULL DEFAULT 0,
+		workspace   TEXT NOT NULL DEFAULT '',
+		created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+		updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+	)`); err != nil {
+		return fmt.Errorf("create projects table: %w", err)
+	}
+
 	return nil
 }
 

@@ -69,6 +69,8 @@ func main() {
 	mux.HandleFunc("/api/plugins/tmux/session", handler.TmuxDeleteSession)
 	mux.HandleFunc("/api/plugins/tmux/terminal", handler.TmuxTerminalWS)
 	mux.HandleFunc("/api/terminal", handler.ShellTerminalWS)
+	mux.HandleFunc("/api/deploy/projects", handler.DeployProjects)
+	mux.HandleFunc("/api/deploy/projects/", handler.DeployProjectByID)
 
 	srv := http.Server{
 		Addr:    ":" + port,

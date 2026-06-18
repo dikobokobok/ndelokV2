@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Shield, Eye, EyeOff, User, Lock, Mail, Server, Terminal, Cpu } from "lucide-react";
 
-const API = "http://localhost:1235";
+const API = "http://127.0.0.1:1235";
 
 // ──────────────────────────────────────────────────────────────
 //  Types
@@ -44,7 +44,7 @@ function TerminalTicker() {
     let timer: ReturnType<typeof setTimeout>;
     const fetchStats = async () => {
       try {
-        const res = await fetch("http://localhost:1235/api/metrics");
+        const res = await fetch(`${API}/api/metrics`);
         if (!res.ok) throw new Error("not ok");
         const d = await res.json();
         if (!mounted) return;
@@ -300,7 +300,7 @@ function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
     let timer: ReturnType<typeof setTimeout>;
     const fetchStats = async () => {
       try {
-        const res = await fetch("http://localhost:1235/api/metrics");
+        const res = await fetch(`${API}/api/metrics`);
         if (!res.ok) throw new Error("not ok");
         const d = await res.json();
         if (!mounted) return;
