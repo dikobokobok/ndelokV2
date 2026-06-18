@@ -2081,6 +2081,17 @@ function DeployView() {
     setIsLogsOpen(true);
   };
 
+  const getBindUrl = (v: string) => {
+    const val = v.trim();
+    if (/^\d+$/.test(val)) {
+      return `http://${window.location.hostname || "127.0.0.1"}:${val}`;
+    }
+    if (!/^https?:\/\//.test(val)) {
+      return `http://${val}`;
+    }
+    return val;
+  };
+
   // Styles
   const overlayStyle = {
     position: "fixed" as const,
@@ -2240,9 +2251,11 @@ function DeployView() {
               justifyContent: "space-between",
               alignItems: "center"
             }}>
-              <span className="font-mono" style={{ fontSize: "0.6rem", fontWeight: 700, backgroundColor: "white", padding: "1px 4px", border: "1.5px solid black" }}>
-                BIND: {proj.port}
-              </span>
+              <a href={getBindUrl(proj.port)} target="_blank" rel="noopener noreferrer"
+                  className="font-mono"
+                  style={{ fontSize: "0.6rem", fontWeight: 700, backgroundColor: "white", padding: "1px 4px", border: "1.5px solid black", color: "black", textDecoration: "none", cursor: "pointer" }}>
+                BIND: {(proj.port || "").toString().trim()}
+              </a>
               <span className="badge" style={{ 
                 backgroundColor: "black", 
                 color: proj.status === "RUNNING" ? "var(--system-green)" : proj.status === "DEPLOYING" ? "var(--system-yellow)" : "var(--system-red)",

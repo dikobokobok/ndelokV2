@@ -267,9 +267,21 @@ func toggleProject(w http.ResponseWriter, r *http.Request, id int) {
 	}
 
 	// Start — re-run startCmd in workspace dir
+		if err := startProject(p); err != nil {
+			writeJSON(w, http.StatusInternalServerError, projectActionResponse{Success: false, Message: err.Error()})
+			return
+		}
+
+	p, _ = scanProjectByID(id)
+	writeJSON(w, http.StatusOK, projectActionResponse{Success: true, Message: "started", Project: p})
+}
+
+// ───────── Reusable Start (used by toggle + startup restore) ─────────
+
+// startProject runs the project's startCmd in its workspace as a daemon.
+func startProject(p *Project) error {
 	if p.StartCmd == "" {
-		writeJSON(w, http.StatusBadRequest, projectActionResponse{Success: false, Message: "no start command configured"})
-		return
+		return fmt.Errorf("no start command configured")
 	}
 
 	logPath := filepath.Join(p.Workspace, "ndelok.log")
@@ -279,8 +291,7 @@ func toggleProject(w http.ResponseWriter, r *http.Request, id int) {
 		os.MkdirAll(p.Workspace, 0755)
 		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, projectActionResponse{Success: false, Message: "cannot open log: " + err.Error()})
-			return
+			return fmt.Errorf("cannot open log: %w", err)
 		}
 	}
 
@@ -292,12 +303,11 @@ func toggleProject(w http.ResponseWriter, r *http.Request, id int) {
 
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
-		writeJSON(w, http.StatusInternalServerError, projectActionResponse{Success: false, Message: "start failed: " + err.Error()})
-		return
+		return fmt.Errorf("start failed: %w", err)
 	}
 
 	pid := cmd.Process.Pid
-	updateProjectStatus(id, "RUNNING", pid)
+	updateProjectStatus(p.ID, "RUNNING", pid)
 
 	// Reap orphan in background to avoid zombie
 	go func() {
@@ -305,8 +315,40 @@ func toggleProject(w http.ResponseWriter, r *http.Request, id int) {
 		logFile.Close()
 	}()
 
-	p, _ = scanProjectByID(id)
-	writeJSON(w, http.StatusOK, projectActionResponse{Success: true, Message: "started", Project: p})
+	return nil
+}
+
+// RestoreRunningProjects is called on server startup. It queries all
+// projects whose status was RUNNING (before the previous shutdown) and
+// re-starts them so they survive reboots.
+func RestoreRunningProjects() {
+	log.Println("[RESTORE] checking for projects to auto-restart...")
+	rows, err := db.DB.Query(
+		`SELECT id, name, port_domain, method, github_link, folder_path, build_cmd, start_cmd, status, pid, workspace, created_at, updated_at
+		 FROM projects WHERE status = 'RUNNING'`)
+	if err != nil {
+		log.Printf("[RESTORE] query failed: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	var restored int
+	for rows.Next() {
+		p, err := scanProject(rows)
+		if err != nil {
+			continue
+		}
+		log.Printf("[RESTORE] restarting %q (id=%d, port=%s)", p.Name, p.ID, p.PortDomain)
+		// Reset stale PID first
+		updateProjectStatus(p.ID, "RESTORING", 0)
+		if err := startProject(p); err != nil {
+			log.Printf("[RESTORE] failed to start %q: %v", p.Name, err)
+			updateProjectStatus(p.ID, "STOPPED", 0)
+			continue
+		}
+		restored++
+	}
+	log.Printf("[RESTORE] done — %d project(s) restored", restored)
 }
 
 type safeConn struct {

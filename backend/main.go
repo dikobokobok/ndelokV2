@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"os"
 
@@ -27,9 +28,33 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+func listIPs(port string) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return
+	}
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok || ipnet.IP.IsLoopback() || ipnet.IP.To4() == nil {
+				continue
+			}
+			log.Printf("  ➜  Network: http://%s/", net.JoinHostPort(ipnet.IP.String(), port))
+		}
+	}
+}
+
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:1234")
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			origin = "http://localhost:1234"
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
@@ -47,6 +72,9 @@ func main() {
 		log.Fatalf("init: %v", err)
 	}
 	defer db.Close()
+
+	// Restart projects that were RUNNING before the previous shutdown
+	handler.RestoreRunningProjects()
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -78,6 +106,7 @@ func main() {
 	}
 
 	log.Printf("listen :%s", port)
+	listIPs(port)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
