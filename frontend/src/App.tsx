@@ -4137,28 +4137,17 @@ function LogsTermView() {
   const [isTermMinimized, setIsTermMinimized] = useState(false);
   const [isTermMaximized, setIsTermMaximized] = useState(false);
 
-  const [terminalLines, setTerminalLines] = useState<string[]>([
-    "Ndelok Server Shell Terminal (Mock SSH Session)",
-    "System: ndelokOS v0.18.0 (kernel 6.1-amd64)",
-    "Authorized admin session active. Type 'help' for available commands.",
-    ""
-  ]);
-  const [commandInput, setCommandInput] = useState("");
-  const [commandHistory, setCommandHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(0);
-
   const logsEndRef = useRef<HTMLDivElement>(null);
-  const terminalEndRef = useRef<HTMLDivElement>(null);
-  const terminalInputRef = useRef<HTMLInputElement>(null);
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const termRef = useRef<any>(null);
+  const fitRef = useRef<any>(null);
+  const [termConnected, setTermConnected] = useState(false);
 
-  // Auto-scroll logs and terminal
+  // Auto-scroll logs
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
-
-  useEffect(() => {
-    terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [terminalLines]);
 
   // Real-time system log generator
   useEffect(() => {
@@ -4190,130 +4179,56 @@ function LogsTermView() {
     return () => clearInterval(interval);
   }, [isStreaming]);
 
-  // Command History Navigation
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (commandHistory.length === 0) return;
-      const nextIndex = historyIndex > 0 ? historyIndex - 1 : 0;
-      setHistoryIndex(nextIndex);
-      setCommandInput(commandHistory[nextIndex]);
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      const nextIndex = historyIndex < commandHistory.length - 1 ? historyIndex + 1 : commandHistory.length;
-      setHistoryIndex(nextIndex);
-      if (nextIndex === commandHistory.length) {
-        setCommandInput("");
-      } else {
-        setCommandInput(commandHistory[nextIndex]);
-      }
-    }
-  };
+  // Terminal xterm.js + WebSocket init — runs ONCE, never re-creates
+  useEffect(() => {
+    if (!terminalRef.current) return;
 
-  // Command Executor
-  const handleCommandSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cmd = commandInput.trim();
-    if (!cmd) return;
+    let alive = true;
+    const initTerminal = async () => {
+      const { Terminal } = await import("xterm");
+      const { FitAddon } = await import("xterm-addon-fit");
+      if (!alive || !terminalRef.current) return;
 
-    const promptStr = `admin@ndelok-server:~$ ${cmd}`;
-    const newHistory = [...commandHistory, cmd];
-    setCommandHistory(newHistory);
-    setHistoryIndex(newHistory.length);
+      const term = new Terminal({
+        cursorBlink: true, fontSize: 13, fontFamily: "'Space Mono', monospace",
+        convertEol: true, cols: 80, rows: 24, cursorStyle: "bar",
+        allowTransparency: true, theme: { background: "#000000", foreground: "#e0e0e0", cursor: "#e0e0e0", selectionBackground: "#333333" }
+      });
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(terminalRef.current);
+      setTimeout(() => fitAddon.fit(), 100);
+      termRef.current = term;
+      fitRef.current = fitAddon;
 
-    let responseLines: string[] = [];
-    const parts = cmd.split(" ");
-    const mainCommand = parts[0].toLowerCase();
-    const arg = parts.slice(1).join(" ");
+      const ws = new WebSocket("ws://localhost:1235/api/terminal");
+      ws.onopen = () => { setTermConnected(true); term.focus(); };
+      ws.onmessage = (e) => { term.write(e.data); };
+      ws.onerror = () => { setTermConnected(false); term.writeln("\r\n\x1b[31m[Connection error]\x1b[0m\r\n"); };
+      ws.onclose = () => { setTermConnected(false); };
+      wsRef.current = ws;
 
-    switch (mainCommand) {
-      case "help":
-        responseLines = [
-          "Available commands:",
-          "  help              - List available commands",
-          "  clear             - Clear the screen",
-          "  neofetch          - Print system specifications and logo",
-          "  pm2 list / status - Show running daemon processes and specs",
-          "  uptime            - Show system execution uptime",
-          "  whoami            - Print active session user",
-          "  date              - Show current system date & time",
-          "  ls                - List mock directory workspace items",
-          "  cat [filename]    - Print contents of a text file"
-        ];
-        break;
-      case "clear":
-        setTerminalLines([]);
-        setCommandInput("");
-        return;
-      case "neofetch":
-        responseLines = [
-          "    .ndelok.     admin@ndelok-server",
-          "  `::++++++::`   -------------------",
-          "  ++:      :++   OS: ndelokOS v0.18.0 x86_64",
-          "  ++        ++   Host: Server-Prod-01",
-          "  ++:      :++   Kernel: Linux 6.1.0-9-amd64",
-          "  `::++++++::`   Uptime: 4 days, 5 hours, 32 mins",
-          "    .ndelok.     Shell: bash 5.1.16",
-          "                 CPU: Intel Xeon E5-2673 v4 (4) @ 2.3GHz",
-          "                 Memory: 312MB / 2048MB (15.2%)",
-          "                 Storage: 42GB / 100GB (42%)"
-        ];
-        break;
-      case "pm2":
-        if (arg === "list" || arg === "status" || arg === "") {
-          responseLines = [
-            "┌────┬────────────────────┬──────────┬────────┬──────────┬──────────┬──────────┐",
-            "│ id │ name               │ mode     │ status │ cpu      │ memory   │ uptime   │",
-            "├────┼────────────────────┼──────────┼────────┼──────────┼──────────┼──────────┤",
-            "│ 0  │ ndelok-dashboard   │ fork     │ online │ 2.5%     │ 128 MB   │ 4d 5h    │",
-            "│ 1  │ api-gateway        │ fork     │ online │ 1.1%     │ 96 MB    │ 4d 5h    │",
-            "│ 2  │ auth-service       │ fork     │ stopped│ 0%       │ 0 MB     │ 0        │",
-            "│ 3  │ postgres-db        │ fork     │ online │ 0.8%     │ 512 MB   │ 4d 5h    │",
-            "└────┴────────────────────┴──────────┴────────┴──────────┴──────────┴──────────┘"
-          ];
-        } else {
-          responseLines = [`pm2: command not recognized: "${arg}". Try "pm2 list".`];
+      term.onData((data: string) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(data);
+      });
+
+      term.onResize(({ cols, rows }) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ __resize__: true, cols, rows }));
         }
-        break;
-      case "uptime":
-        responseLines = [" 01:53:10 up 4 days, 5 hours, 32 minutes, 1 user, load average: 0.12, 0.08, 0.05"];
-        break;
-      case "whoami":
-        responseLines = ["admin"];
-        break;
-      case "date":
-        responseLines = [new Date().toString()];
-        break;
-      case "ls":
-        responseLines = ["public/    src/    package.json    README.md    vite.config.ts"];
-        break;
-      case "cat":
-        if (!arg) {
-          responseLines = ["cat: missing file argument. Usage: cat [filename]"];
-        } else {
-          const fileMap: { [key: string]: string } = {
-            "readme.md": `# ndelok\nSistem monitoring server dengan antarmuka Neobrutalist.`,
-            "package.json": `{\n  "name": "ndelok",\n  "version": "0.18.0",\n  "type": "module"\n}`,
-            "vite.config.ts": `import { defineConfig } from "vite";\nexport default defineConfig({});`
-          };
-          const normalizedArg = arg.toLowerCase();
-          if (fileMap[normalizedArg]) {
-            responseLines = fileMap[normalizedArg].split("\n");
-          } else {
-            responseLines = [`cat: ${arg}: No such file in root directory`];
-          }
-        }
-        break;
-      default:
-        responseLines = [
-          `bash: ${mainCommand}: command not found.`,
-          "Type 'help' to see list of valid commands."
-        ];
-    }
+      });
+    };
 
-    setTerminalLines(prev => [...prev, promptStr, ...responseLines, ""]);
-    setCommandInput("");
-  };
+    initTerminal();
+    return () => { alive = false; if (wsRef.current) { wsRef.current.close(); wsRef.current = null; } if (termRef.current) { termRef.current.dispose(); termRef.current = null; fitRef.current = null; } };
+  }, []);
+
+  // Fit terminal on maximize or window resize
+  useEffect(() => {
+    if (fitRef.current && !isTermMinimized) {
+      setTimeout(() => fitRef.current.fit(), 120);
+    }
+  }, [isTermMaximized]);
 
   // Log Filtering
   const filteredLogs = logs.filter(log => {
@@ -4474,16 +4389,17 @@ function LogsTermView() {
         </div>
 
         {/* Right Pane: SSH Terminal Console */}
-        <div style={consoleBoxStyle} onClick={() => terminalInputRef.current?.focus()}>
-          <div style={consoleHeaderStyle("var(--system-blue)")}>
-            <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
-              SSH TERMINAL CONSOLE
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <div className="badge font-mono" style={{ fontSize: "0.6rem", backgroundColor: "black", color: "white" }}>
-                admin@ndelok-server
-              </div>
+        <div style={{ ...consoleBoxStyle, overflow: isTermMaximized ? "visible" : "hidden" }}>
+          {/* Hide header when maximized (shown inside terminal overlay instead) */}
+          <div style={{ ...consoleHeaderStyle("var(--system-blue)"), display: isTermMaximized ? "none" : undefined }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: termConnected ? "var(--system-green)" : "var(--system-red)", display: "inline-block" }} />
+                SSH TERMINAL CONSOLE
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <div className="badge font-mono" style={{ fontSize: "0.6rem", backgroundColor: "black", color: "white" }}>
+                  admin@ndelok-server
+                </div>
               {/* Minimize button */}
               <button
                 onClick={(e) => { e.stopPropagation(); setIsTermMinimized(v => !v); setIsTermMaximized(false); }}
@@ -4499,44 +4415,47 @@ function LogsTermView() {
             </div>
           </div>
 
-          {!isTermMinimized && (
-            <>
-              <div style={{ ...streamBodyStyle, backgroundColor: "#000000", padding: "16px" }} className="font-mono">
-                <div style={{ fontSize: "0.7rem", color: "#a7f3d0", whiteSpace: "pre-wrap", overflowX: "auto" }}>
-                  {terminalLines.map((line, idx) => (
-                    <div key={idx} style={{ minHeight: "1.2em" }}>{line}</div>
-                  ))}
-
-                  <form onSubmit={handleCommandSubmit} style={{ display: "flex", alignItems: "center", marginTop: "4px" }}>
-                    <span style={{ color: "#38bdf8", marginRight: "6px", flexShrink: 0 }}>admin@ndelok-server:~$</span>
-                    <input 
-                      type="text" 
-                      value={commandInput} 
-                      onChange={(e) => setCommandInput(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      ref={terminalInputRef}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        outline: "none",
-                        color: "#22c55e",
-                        fontFamily: "var(--font-space-mono), monospace",
-                        fontSize: "0.7rem",
-                        flex: 1,
-                        caretColor: "#22c55e",
-                        padding: 0
-                      }}
-                      autoFocus
-                    />
-                  </form>
+          {/* Terminal always rendered — CSS handles hide/reposition */}
+          <div ref={terminalRef} style={{
+            flex: 1, minHeight: 0, backgroundColor: "#000000",
+            borderTop: isTermMaximized ? "none" : "1px solid #222",
+            overflow: "hidden",
+            display: isTermMinimized ? "none" : undefined,
+            position: isTermMaximized ? "fixed" : undefined,
+            inset: isTermMaximized ? 0 : undefined,
+            zIndex: isTermMaximized ? 9999 : undefined,
+            paddingTop: isTermMaximized ? "44px" : undefined,
+          }}>
+            {/* Header bar shown only when maximized */}
+            {isTermMaximized && (
+              <div style={{
+                position: "absolute", top: 0, left: 0, right: 0, height: "44px",
+                ...consoleHeaderStyle("var(--system-blue)"),
+                zIndex: 1, cursor: "default"
+              }}>
+                <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: termConnected ? "var(--system-green)" : "var(--system-red)", display: "inline-block" }} />
+                  SSH TERMINAL CONSOLE
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div className="badge font-mono" style={{ fontSize: "0.6rem", backgroundColor: "black", color: "white" }}>admin@ndelok-server</div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsTermMaximized(false); }}
+                    title="Restore Down"
+                    style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#bbf7d0", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}
+                  >❐</button>
                 </div>
-                <div ref={terminalEndRef} />
               </div>
-            </>
-          )}
+            )}
+          </div>
         </div>
 
       </div>
+
+      {/* Terminal maximized backdrop */}
+      {isTermMaximized && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 9998 }} onClick={() => setIsTermMaximized(false)} />
+      )}
 
       {/* Log Stream Maximized Overlay */}
       {isLogMaximized && (
@@ -4578,44 +4497,6 @@ function LogsTermView() {
         </>
       )}
 
-      {/* SSH Terminal Maximized Overlay */}
-      {isTermMaximized && (
-        <>
-          <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 998 }} onClick={() => setIsTermMaximized(false)} />
-          <div style={{ position: "fixed", inset: 0, zIndex: 999, display: "flex", flexDirection: "column", backgroundColor: "#000000", border: "3px solid black", boxShadow: "0 0 0 4px black" }} onClick={() => terminalInputRef.current?.focus()}>
-            <div style={{ ...consoleHeaderStyle("var(--system-blue)"), flexShrink: 0 }}>
-              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
-                SSH TERMINAL CONSOLE
-              </span>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <div className="badge font-mono" style={{ fontSize: "0.6rem", backgroundColor: "black", color: "white" }}>admin@ndelok-server</div>
-                <button onClick={(e) => { e.stopPropagation(); setIsTermMaximized(false); }} title="Restore Down" style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#bbf7d0", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}>❐</button>
-              </div>
-            </div>
-            <div style={{ flex: 1, backgroundColor: "#000000", padding: "16px", overflowY: "auto", lineHeight: 1.4 }} className="font-mono">
-              <div style={{ fontSize: "0.8rem", color: "#a7f3d0", whiteSpace: "pre-wrap", overflowX: "auto" }}>
-                {terminalLines.map((line, idx) => (
-                  <div key={idx} style={{ minHeight: "1.2em" }}>{line}</div>
-                ))}
-                <form onSubmit={handleCommandSubmit} style={{ display: "flex", alignItems: "center", marginTop: "4px" }}>
-                  <span style={{ color: "#38bdf8", marginRight: "6px", flexShrink: 0 }}>admin@ndelok-server:~$</span>
-                  <input
-                    type="text"
-                    value={commandInput}
-                    onChange={(e) => setCommandInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    ref={terminalInputRef}
-                    style={{ background: "transparent", border: "none", outline: "none", color: "#22c55e", fontFamily: "var(--font-space-mono), monospace", fontSize: "0.8rem", flex: 1, caretColor: "#22c55e", padding: 0 }}
-                    autoFocus
-                  />
-                </form>
-              </div>
-              <div ref={terminalEndRef} />
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }

@@ -325,7 +325,7 @@ func TmuxNewSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := exec.Command("tmux", "new-session", "-d", "-s", req.Name)
+		cmd := exec.Command("tmux", "new-session", "-d", "-s", req.Name, "-c", "/home/inu")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, tmuxActionResponse{Success: false, Message: string(out)})
 		return

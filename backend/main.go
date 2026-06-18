@@ -67,8 +67,8 @@ func main() {
 			mux.HandleFunc("/api/plugins/tmux/install", handler.TmuxInstall)
 			mux.HandleFunc("/api/plugins/tmux/new", handler.TmuxNewSession)
 			mux.HandleFunc("/api/plugins/tmux/session", handler.TmuxDeleteSession)
-			mux.HandleFunc("/api/plugins/tmux/terminal", handler.TmuxTerminalWS)
-
+				mux.HandleFunc("/api/plugins/tmux/terminal", handler.TmuxTerminalWS)
+				mux.HandleFunc("/api/terminal", handler.ShellTerminalWS)
 
 	srv := http.Server{
 		Addr:    ":" + port,
