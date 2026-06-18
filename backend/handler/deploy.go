@@ -232,13 +232,21 @@ func deleteProject(w http.ResponseWriter, r *http.Request, id int) {
 	}
 
 	// Stop process if running
-	p, err := scanProjectByID(id)
-	if err == nil && p.PID > 0 {
-		killProcess(p.PID)
-	}
+		p, err := scanProjectByID(id)
+		if err == nil {
+			if p.PID > 0 {
+				killProcess(p.PID)
+			}
+			// Remove workspace folder from disk
+			if p.Workspace != "" {
+				if err := os.RemoveAll(p.Workspace); err != nil {
+					log.Printf("delete: remove workspace %q: %v", p.Workspace, err)
+				}
+			}
+		}
 
-	db.DB.Exec(`DELETE FROM projects WHERE id = ?`, id)
-	writeJSON(w, http.StatusOK, projectActionResponse{Success: true, Message: "deleted"})
+		db.DB.Exec(`DELETE FROM projects WHERE id = ?`, id)
+		writeJSON(w, http.StatusOK, projectActionResponse{Success: true, Message: "deleted"})
 }
 
 // ───────── Toggle Start/Stop ─────────
