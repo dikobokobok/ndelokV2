@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -325,7 +326,11 @@ func TmuxNewSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-		cmd := exec.Command("tmux", "new-session", "-d", "-s", req.Name, "-c", "/home/inu")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "."
+	}
+	cmd := exec.Command("tmux", "new-session", "-d", "-s", req.Name, "-c", homeDir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, tmuxActionResponse{Success: false, Message: string(out)})
 		return

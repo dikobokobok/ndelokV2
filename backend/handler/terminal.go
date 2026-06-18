@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 
 	"github.com/gorilla/websocket"
 )
@@ -27,8 +28,21 @@ func ShellTerminalWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := exec.Command("/bin/bash", "-i")
-	cmd.Dir = "/home/inu"
+	var shell string
+	var shellArgs []string
+	if runtime.GOOS == "windows" {
+		shell = "cmd.exe"
+	} else {
+		shell = "/bin/bash"
+		shellArgs = []string{"-i"}
+	}
+	cmd := exec.Command(shell, shellArgs...)
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "."
+	}
+	cmd.Dir = homeDir
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
 	outR, outW := io.Pipe()

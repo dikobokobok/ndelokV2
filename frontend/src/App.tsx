@@ -54,12 +54,9 @@ export default function App() {
 
 const formatNetSpeed = (bytes: number) => {
   if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB/s`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB/S`;
   }
-  if (bytes >= 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB/s`;
-  }
-  return `${bytes.toFixed(0)} B/s`;
+  return `${(bytes / 1024).toFixed(1)} KB/S`;
 };
 
 function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser: string; loggedInUserEmail: string; onLogout: () => void }) {
@@ -216,13 +213,18 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
         const data = await res.json();
         if (!mounted) return;
 
+        const replaceGiB = (str: string) => {
+          if (!str) return "";
+          return str.replace(/GiB/g, "GB").replace(/TiB/g, "TB");
+        };
+
         setMetrics({
           cpu: data.cpu,
           ram: data.ram,
           storage: data.storage,
           cpuInfo: data.cpu_info || "",
-          ramInfo: data.ram_info || "",
-          storageInfo: data.storage_info || "",
+          ramInfo: replaceGiB(data.ram_info || ""),
+          storageInfo: replaceGiB(data.storage_info || ""),
           uptime: data.uptime || "",
           uptimeNum: data.uptime_num || 0,
           network: { up: data.network.up, down: data.network.down },
@@ -379,11 +381,7 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
               </div>
             </header>
 
-            <div style={{ 
-              display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", 
-              gap: "var(--space-lg)" 
-            }}>
+            <div className="metrics-grid">
               {/* CPU Card */}
               <MetricCard 
                 title="CPU USAGE" 
@@ -418,11 +416,11 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
                   <Network size={24} />
                 </div>
                 <div style={{ display: "flex", gap: "var(--space-md)", flex: 1 }}>
-                  <div style={{ flex: 1, padding: "var(--space-sm)", border: "2px solid black", backgroundColor: "var(--system-green)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                  <div style={{ flex: 1, width: "50%", minWidth: 0, padding: "var(--space-sm)", border: "2px solid black", backgroundColor: "var(--system-green)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                     <p className="font-heading" style={{ fontSize: "0.7rem", fontWeight: 700 }}>DOWN</p>
                     <p className="font-display" style={{ fontSize: "1.8rem" }}>{formatNetSpeed(metrics.network.down)}</p>
                   </div>
-                  <div style={{ flex: 1, padding: "var(--space-sm)", border: "2px solid black", backgroundColor: "white", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                  <div style={{ flex: 1, width: "50%", minWidth: 0, padding: "var(--space-sm)", border: "2px solid black", backgroundColor: "white", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                     <p className="font-heading" style={{ fontSize: "0.7rem", fontWeight: 700 }}>UP</p>
                     <p className="font-display" style={{ fontSize: "1.8rem" }}>{formatNetSpeed(metrics.network.up)}</p>
                   </div>
@@ -602,8 +600,13 @@ function MetricCard({ title, value, icon, color, spec }: any) {
             fontSize: "0.72rem", 
             fontWeight: 700,
             color: "#000000",
-            boxShadow: "2px 2px 0px #000000"
+            boxShadow: "2px 2px 0px #000000",
+            maxWidth: "calc(100% - 24px)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap"
           }}
+          title={spec}
         >
           {spec}
         </div>
@@ -4391,7 +4394,7 @@ function LogsTermView() {
         {/* Right Pane: SSH Terminal Console */}
         <div style={{ ...consoleBoxStyle, overflow: isTermMaximized ? "visible" : "hidden" }}>
           {/* Hide header when maximized (shown inside terminal overlay instead) */}
-          <div style={{ ...consoleHeaderStyle("var(--system-blue)"), display: isTermMaximized ? "none" : undefined }}>
+          <div style={{ ...consoleHeaderStyle("var(--system-blue)"), display: isTermMaximized ? "none" : "flex" }}>
               <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: termConnected ? "var(--system-green)" : "var(--system-red)", display: "inline-block" }} />
                 SSH TERMINAL CONSOLE

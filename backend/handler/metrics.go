@@ -96,37 +96,37 @@ func Metrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Network — bytes delta per second
-		if counters, err := net.IOCounters(false); err == nil && len(counters) > 0 {
-			c := counters[0]
-			if prevNetOk {
-				elapsed := time.Since(prevNetTime).Seconds()
-				if elapsed > 0 {
-					resp.Network.Up = float64(c.BytesSent-prevNetStat.BytesSent) / elapsed
-					resp.Network.Down = float64(c.BytesRecv-prevNetStat.BytesRecv) / elapsed
-				}
+	if counters, err := net.IOCounters(false); err == nil && len(counters) > 0 {
+		c := counters[0]
+		if prevNetOk {
+			elapsed := time.Since(prevNetTime).Seconds()
+			if elapsed > 0 {
+				resp.Network.Up = float64(c.BytesSent-prevNetStat.BytesSent) / elapsed
+				resp.Network.Down = float64(c.BytesRecv-prevNetStat.BytesRecv) / elapsed
 			}
-			prevNetStat = c
-			prevNetOk = true
-			prevNetTime = time.Now()
 		}
+		prevNetStat = c
+		prevNetOk = true
+		prevNetTime = time.Now()
+	}
 
-		// Uptime
-		up, err := host.Uptime()
-		if err != nil {
-			up = uint64(time.Since(startTime).Seconds())
-		}
-		resp.UptimeNum = up
-		days := up / 86400
-		hours := (up % 86400) / 3600
-		mins := (up % 3600) / 60
-		if days > 0 {
-			resp.Uptime = fmt.Sprintf("%dd %dh %dm", days, hours, mins)
-		} else {
-			resp.Uptime = fmt.Sprintf("%dh %dm", hours, mins)
-		}
+	// Uptime
+	up, err := host.Uptime()
+	if err != nil {
+		up = uint64(time.Since(startTime).Seconds())
+	}
+	resp.UptimeNum = up
+	days := up / 86400
+	hours := (up % 86400) / 3600
+	mins := (up % 3600) / 60
+	if days > 0 {
+		resp.Uptime = fmt.Sprintf("%dd %dh %dm", days, hours, mins)
+	} else {
+		resp.Uptime = fmt.Sprintf("%dh %dm", hours, mins)
+	}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func storageRoot() string {
