@@ -1,0 +1,148 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;700&family=Space+Grotesk:wght@700&family=Space+Mono:wght@400;700&family=Syne:wght@800&display=swap');
+
+:root {
+  /* Font Families */
+  --font-syne: 'Syne', sans-serif;
+  --font-bebas-neue: 'Bebas Neue', sans-serif;
+  --font-space-grotesk: 'Space Grotesk', sans-serif;
+  --font-inter: 'Inter', sans-serif;
+  --font-space-mono: 'Space Mono', monospace;
+
+  /* Status Colors */
+  --system-green: oklch(0.85 0.25 145);
+  --system-blue: oklch(0.7 0.2 280);
+  --system-yellow: oklch(0.85 0.2 85);
+  --system-red: oklch(0.65 0.25 20);
+
+  /* Neutrals */
+  --bg: oklch(0.98 0 0);
+  --ink: #000000;
+  --secondary-bg: oklch(0.92 0.01 240);
+
+  /* Neobrutalist Properties */
+  --border-width: 3px;
+  --shadow-offset: 4px;
+  --shadow: var(--shadow-offset) var(--shadow-offset) 0px var(--ink);
+  --shadow-active: 2px 2px 0px var(--ink);
+  
+  /* Spacing (4pt base) */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 32px;
+  --space-xl: 64px;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-inter), sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-space-grotesk), sans-serif;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+/* Typography Utility Classes */
+.font-display {
+  font-family: var(--font-bebas-neue), sans-serif;
+  font-weight: 400;
+}
+
+.font-syne {
+  font-family: var(--font-syne), sans-serif;
+  font-weight: 800;
+}
+
+.font-heading {
+  font-family: var(--font-space-grotesk), sans-serif;
+  font-weight: 700;
+}
+
+.font-body {
+  font-family: var(--font-inter), sans-serif;
+}
+
+.font-mono {
+  font-family: var(--font-space-mono), monospace;
+}
+
+/* Neobrutalist Components */
+.card {
+  background: white;
+  border: var(--border-width) solid var(--ink);
+  box-shadow: var(--shadow);
+  padding: var(--space-md);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px var(--ink);
+}
+
+.btn {
+  background: var(--system-green);
+  border: var(--border-width) solid var(--ink);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-block;
+  font-family: var(--font-space-grotesk), sans-serif;
+  font-weight: 700;
+  padding: var(--space-sm) var(--space-md);
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: all 0.1s;
+}
+
+.btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: var(--shadow-active);
+}
+
+.badge {
+  border: 2px solid var(--ink);
+  display: inline-block;
+  font-family: var(--font-space-mono), monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px var(--space-sm);
+  text-transform: uppercase;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Metric Cards Grid */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-lg);
+}
+
+@media (max-width: 1200px) {
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

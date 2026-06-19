@@ -1,0 +1,17 @@
+{
+  "name": "ndelok-root",
+  "version": "0.20.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "node -e \"const cp = require('child_process'); cp.spawnSync(process.argv[0], [process.env.npm_execpath || 'npm', 'install', '--prefix', 'frontend'], { stdio: 'inherit', shell: true });\"",
+    "dev": "concurrently -n frontend,backend -c cyan,green \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "go run -C ./backend .",
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix frontend run start",
+    "lint": "npm --prefix frontend run lint"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3"
+  }
+}

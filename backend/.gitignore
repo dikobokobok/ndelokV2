@@ -1,0 +1,7 @@
+# Go binaries
+*.exe
+
+# SQLite database
+*.db
+*.db-shm
+*.db-wal

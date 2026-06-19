@@ -1,0 +1,44 @@
+[
+  {
+    "bugId": "BUG-1",
+    "response": "DISPROVE",
+    "analysisSummary": "safeJoin works correctly. On Windows, explorer root is 'C:\\' — the ENTIRE C drive is the valid explorer space, so 'C:\\Windows\\win.ini' is within bounds. Cross-drive access ('D:\\') is correctly blocked. On Unix, explorer root is home directory — '..' in Rel output correctly blocks traversal above home. Verified via Go sandbox: filepath.Join('C:\\', '../../Windows/win.ini') returns 'C:\\Windows\\win.ini', then filepath.Rel('C:\\', 'C:\\Windows\\win.ini') returns 'Windows\\win.ini' (no '..' prefix). This is NOT a path traversal — the result is still within the explorer root. The function's design intent IS to allow C: drive exploration on Windows.",
+    "counterEvidence": "backend/handler/explorer.go:36-37: explorerRoot = 'C:\\' on Windows (entire drive is valid). Sandbox test confirms: '../../Windows/win.ini' -> ALLOWED (C:\\Windows\\win.ini), 'D:\\' -> BLOCKED (access denied)."
+  },
+  {
+    "bugId": "BUG-2",
+    "response": "ACCEPT",
+    "analysisSummary": "WebSocket at /api/terminal provides unrestricted shell access. No auth middleware, no origin restriction (CheckOrigin returns true). Direct call to exec.Command(shell, args...) spawns interactive bash/cmd. Any client reaching the WebSocket endpoint gets a full shell. Evidence code: terminal.go:21-23, terminal.go:31-39, main.go:99, main.go:114-117.",
+    "counterEvidence": "backend/handler/terminal.go:31-39 spawns shell via exec.Command(shell, shellArgs...). backend/main.go:99 registers route without auth wrapper. backend/main.go:114-117 shows server only wraps cors(mux), no auth filter."
+  },
+  {
+    "bugId": "BUG-3",
+    "response": "ACCEPT",
+    "analysisSummary": "GithubLink from createProject request body is concatenated into 'git clone ' + p.GithubLink + ' .' and executed via shellCommand which calls sh -c. Semicolons, pipes, backticks in GithubLink execute arbitrary commands. Exploit path: POST to /api/deploy/projects (no auth) with method='github' and githubLink containing shell metacharacters. Evidence: deploy.go:189 stores raw input, deploy.go:425 concatenates into shell command, shell_unix.go:9 runs via sh -c.",
+    "counterEvidence": "backend/handler/deploy.go:189: req.GithubLink stored directly from request. backend/handler/deploy.go:425: \"git clone \"+p.GithubLink+\" .\" concatenated into shell string. backend/handler/shell_unix.go:9: exec.Command(\"sh\", \"-c\", command) executes via shell."
+  },
+  {
+    "bugId": "BUG-4",
+    "response": "ACCEPT",
+    "analysisSummary": "No auth middleware exists on any backend route. The cors() wrapper is the only middleware. All 20+ endpoints (/api/explorer/*, /api/deploy/projects/*, /api/plugins/*, /api/terminal, /api/metrics) are publicly accessible. The frontend 'session' from sessionStorage is never verified server-side. This enables the command injection (BUG-3) and unauthenticated shell (BUG-2). Even if some endpoints by design need no auth, the combination of file explorer, process deployment, and shell terminal without auth is a security vulnerability.",
+    "counterEvidence": "backend/main.go:84-101: all routes via raw mux.HandleFunc. backend/main.go:51-67: cors() sets CORS headers only. backend/main.go:114-117: srv.Handler = cors(mux) — only CORS, no auth. frontend/src/App.tsx:12-23: getSession() reads sessionStorage only, no server token verification."
+  },
+  {
+    "bugId": "BUG-5",
+    "response": "ACCEPT",
+    "analysisSummary": "All 4 WebSocket endpoints use 'CheckOrigin: func(r *http.Request) bool { return true }' which allows any website to open WebSocket connections. Even though main.go CORS sets Allow-Origin header, WebSocket upgrade has its own origin check via gorilla/websocket.Upgrader.CheckOrigin. Setting it to always-true disables CSWSH protection. Combined with BUG-2 and BUG-3, this enables exploitation from any attacker-controlled webpage.",
+    "counterEvidence": "backend/handler/terminal.go:21-23: CheckOrigin always true. backend/handler/deploy.go:384-385: deployStream CheckOrigin always true. backend/handler/deploy.go:505-506: logsStream CheckOrigin always true. backend/handler/plugin.go:377-379: TmuxTerminalWS CheckOrigin always true."
+  },
+  {
+    "bugId": "BUG-6",
+    "response": "ACCEPT",
+    "analysisSummary": "Multiple locations silently discard errors from DB operations (insertID, _ := res.LastInsertId(); p, _ := scanProjectByID(id)). When LastInsertId() fails (driver issue, concurrent delete), insertID defaults to 0 and scanProjectByID returns nil. The response then sends Success: true with Project: null, misleading the frontend. Not a crash but data integrity issue in API responses.",
+    "counterEvidence": "backend/handler/deploy.go:196: insertID, _ := res.LastInsertId(). backend/handler/deploy.go:197: p, _ := scanProjectByID(int(insertID)). backend/handler/deploy.go:222: p, _ := scanProjectByID(id). backend/handler/auth.go:133: id, _ := result.LastInsertId()."
+  },
+  {
+    "bugId": "BUG-7",
+    "response": "ACCEPT",
+    "analysisSummary": "defer file.Close() and defer out.Close() inside for loop accumulate all file handles until function returns. Uploading many files simultaneously (limited by 32MB multipart form) exhausts OS file descriptors (default ~512 on Windows, ~256 on some Linux). The function returns on first error, which does trigger accumulated defers, but simultaneous holding of 2N file handles for N files is a resource leak under concurrent uploads.",
+    "counterEvidence": "backend/handler/explorer.go:653-658: for _, fileHeader := range files { file, err := fileHeader.Open(); ... defer file.Close(); ... out, err := os.OpenFile(...); ... defer out.Close() }. All defers accumulate to function exit."
+  }
+]

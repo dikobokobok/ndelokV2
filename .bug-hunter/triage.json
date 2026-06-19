@@ -1,0 +1,94 @@
+{
+  "generatedAt": "2026-06-19T16:24:40.505Z",
+  "target": "C:\\Users\\INU\\Documents\\app\\ndelok",
+  "totalFiles": 17,
+  "scannableFiles": 17,
+  "strategy": "parallel",
+  "modeFile": "modes/parallel.md",
+  "needsLoop": false,
+  "fileBudget": 60,
+  "avgLines": 505,
+  "avgTokensPerFile": 2020,
+  "estimatedTotalLines": 8585,
+  "sampledFiles": 17,
+  "domains": [
+    {
+      "path": "backend",
+      "tier": "HIGH",
+      "fileCount": 13,
+      "riskBreakdown": {
+        "critical": 1,
+        "high": 11,
+        "medium": 1,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "frontend",
+      "tier": "MEDIUM",
+      "fileCount": 4,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 0,
+        "medium": 4,
+        "low": 0,
+        "context-only": 0
+      }
+    }
+  ],
+  "scanOrder": [
+    "backend\\handler\\auth.go",
+    "backend\\db\\db.go",
+    "backend\\handler\\daemon_unix.go",
+    "backend\\handler\\daemon_windows.go",
+    "backend\\handler\\deploy.go",
+    "backend\\handler\\explorer.go",
+    "backend\\handler\\metrics.go",
+    "backend\\handler\\plugin.go",
+    "backend\\handler\\shell_unix.go",
+    "backend\\handler\\shell_windows.go",
+    "backend\\handler\\terminal.go",
+    "backend\\model\\user.go",
+    "backend\\main.go",
+    "frontend\\src\\App.tsx",
+    "frontend\\src\\AuthPages.tsx",
+    "frontend\\src\\main.tsx",
+    "frontend\\vite.config.ts"
+  ],
+  "tokenEstimate": {
+    "recon": 340,
+    "perHunterChunk": 34340,
+    "totalPipeline": 38080
+  },
+  "recommendations": [
+    "Large files (avg 505 lines) — FILE_BUDGET is low (60). Chunking is important."
+  ],
+  "riskMap": {
+    "critical": [
+      "backend\\handler\\auth.go"
+    ],
+    "high": [
+      "backend\\db\\db.go",
+      "backend\\handler\\daemon_unix.go",
+      "backend\\handler\\daemon_windows.go",
+      "backend\\handler\\deploy.go",
+      "backend\\handler\\explorer.go",
+      "backend\\handler\\metrics.go",
+      "backend\\handler\\plugin.go",
+      "backend\\handler\\shell_unix.go",
+      "backend\\handler\\shell_windows.go",
+      "backend\\handler\\terminal.go",
+      "backend\\model\\user.go"
+    ],
+    "medium": [
+      "backend\\main.go",
+      "frontend\\src\\App.tsx",
+      "frontend\\src\\AuthPages.tsx",
+      "frontend\\src\\main.tsx",
+      "frontend\\vite.config.ts"
+    ],
+    "low": [],
+    "context-only": []
+  }
+}
