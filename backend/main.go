@@ -97,13 +97,13 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Public routes (no auth required)
-	mux.HandleFunc("/health", healthHandler)
-	mux.HandleFunc("/api/auth/login", handler.Login)
-	mux.HandleFunc("/api/auth/register", handler.Register)
+		// Public routes (no auth required)
+		mux.HandleFunc("/health", healthHandler)
+		mux.HandleFunc("/api/auth/login", handler.Login)
+		mux.HandleFunc("/api/auth/register", handler.Register)
+		mux.HandleFunc("/api/metrics", handler.Metrics)
 
-	// Protected routes (auth required)
-	mux.HandleFunc("/api/metrics", handler.RequireAuth(handler.Metrics))
+		// Protected routes (auth required)
 	mux.HandleFunc("/api/plugins/zerotier/status", handler.RequireAuth(handler.ZeroTierStatus))
 	mux.HandleFunc("/api/plugins/zerotier/install", handler.RequireAuth(handler.ZeroTierInstall))
 	mux.HandleFunc("/api/plugins/zerotier/join", handler.RequireAuth(handler.ZeroTierJoin))
