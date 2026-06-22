@@ -7,7 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -127,7 +129,29 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 func CheckWSOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
-	return origin == "http://localhost:1234" || origin == "http://127.0.0.1:1234"
+	if origin == "" {
+		return true // Allow non-browser clients or if Origin header is missing
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		host = u.Host
+		port = ""
+	}
+	if port != "1234" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()
+	}
+	return false
 }
 
 // ───────── Rate Limiting (B8) ─────────

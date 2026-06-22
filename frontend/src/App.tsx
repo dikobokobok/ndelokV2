@@ -3,7 +3,9 @@ import { Activity, Cpu, HardDrive, Network, Package, Terminal, Settings, LayoutD
 import { AuthGate } from "./AuthPages";
 import "xterm/css/xterm.css";
 
-const API = "http://127.0.0.1:1235";
+const API_HOST = typeof window !== "undefined" ? window.location.hostname : "127.0.0.1";
+const API_PROTOCOL = typeof window !== "undefined" && window.location.protocol === "https:" ? "https" : "http";
+const API = `${API_PROTOCOL}://${API_HOST}:1235`;
 const SESSION_KEY = "ndelok-session";
 
 function getToken(): string {
@@ -34,7 +36,8 @@ function apiFetch(path: string, options?: RequestInit): Promise<Response> {
 function apiWs(path: string): WebSocket {
   const token = getToken();
   const sep = path.includes("?") ? "&" : "?";
-  return new WebSocket(`ws://127.0.0.1:1235${path}${sep}token=${encodeURIComponent(token)}`);
+  const wsProto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
+  return new WebSocket(`${wsProto}://${API_HOST}:1235${path}${sep}token=${encodeURIComponent(token)}`);
 }
 
 export default function App() {
@@ -308,7 +311,7 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
       }}>
         <div style={{ padding: "var(--space-md) 0" }}>
           <h1 style={{ fontSize: "2.2rem", letterSpacing: "-0.5px", lineHeight: "1" }}>NDELOK</h1>
-          <p className="badge" style={{ backgroundColor: "var(--system-yellow)" }}>v0.18.0</p>
+          <p className="badge" style={{ backgroundColor: "var(--system-yellow)" }}>v0.23.0</p>
         </div>
         
         <nav style={{ display: "flex", flexDirection: "column", gap: "var(--space-sm)" }}>

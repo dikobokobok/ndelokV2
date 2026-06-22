@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { Shield, Eye, EyeOff, User, Lock, Mail, Server, Terminal, Cpu } from "lucide-react";
 
-const API = "http://127.0.0.1:1235";
+const API_HOST = typeof window !== "undefined" ? window.location.hostname : "127.0.0.1";
+const API_PROTOCOL = typeof window !== "undefined" && window.location.protocol === "https:" ? "https" : "http";
+const API = `${API_PROTOCOL}://${API_HOST}:1235`;
 
 // ──────────────────────────────────────────────────────────────
 //  Types
@@ -78,7 +80,7 @@ function TerminalTicker() {
   };
 
   const lines = [
-    "$ ndelok --version 0.18.0",
+    "$ ndelok --version 0.23.0",
     "$ ssh root@production-01",
     `CPU: ${stats.cpu.toFixed(1)}% · RAM: ${stats.ram.toFixed(1)}% · NET: ↓ ${formatSpeed(stats.netDown)}`,
     "$ systemctl status zerotier",
@@ -434,7 +436,7 @@ function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
                 className="badge"
                 style={{ backgroundColor: "black", color: "#88D498", fontSize: "0.6rem" }}
               >
-                v0.18.0
+                v0.23.0
               </span>
             </div>
           </div>
@@ -959,7 +961,7 @@ function RegisterPage({ onLogin, onSwitchToLogin }: RegisterPageProps) {
                   fontSize: "0.6rem",
                 }}
               >
-                v0.18.0
+                v0.23.0
               </span>
             </div>
           </div>

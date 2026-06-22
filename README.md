@@ -2,7 +2,7 @@
 
 Neobrutalist server monitoring & management console. Flat, high-contrast UI with thick black borders and hard shadows — rejects gradient-soft SaaS conventions.
 
-**Version:** 0.20.1
+**Version:** 0.23.0
 
 ---
 

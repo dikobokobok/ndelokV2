@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 
 	"ndelok-backend/db"
@@ -48,16 +49,25 @@ func listIPs(port string) {
 	}
 }
 
-var allowedOrigins = []string{
-	"http://localhost:1234",
-	"http://127.0.0.1:1234",
-}
-
 func originAllowed(origin string) bool {
-	for _, a := range allowedOrigins {
-		if a == origin {
-			return true
-		}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		host = u.Host
+		port = ""
+	}
+	if port != "1234" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()
 	}
 	return false
 }
