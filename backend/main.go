@@ -41,7 +41,7 @@ func listIPs(port string) {
 		}
 		for _, addr := range addrs {
 			ipnet, ok := addr.(*net.IPNet)
-			if !ok || ipnet.IP.IsLoopback() || ipnet.IP.To4() == nil {
+			if !ok || ipnet.IP.IsLoopback() {
 				continue
 			}
 			log.Printf("  ➜  Network: http://%s/", net.JoinHostPort(ipnet.IP.String(), port))
@@ -59,15 +59,26 @@ func originAllowed(origin string) bool {
 		host = u.Host
 		port = ""
 	}
-	if port != "1234" {
+	if host == "" {
 		return false
 	}
-	if host == "localhost" {
+	if port != "" && port != "1234" {
+		return false
+	}
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
 		return true
 	}
 	ip := net.ParseIP(host)
 	if ip != nil {
 		return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()
+	}
+	if addrs, err := net.LookupHost(host); err == nil {
+		for _, a := range addrs {
+			ip := net.ParseIP(a)
+			if ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()) {
+				return true
+			}
+		}
 	}
 	return false
 }

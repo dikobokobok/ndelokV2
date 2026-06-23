@@ -2,7 +2,7 @@
 
 ## Repo Shape
 
-Single-package frontend app (`frontend/`) with root `package.json` as **proxy** — all commands from repo root, never `frontend/` directly. Root `postinstall` auto-installs `frontend/` deps.
+npm workspace monorepo — root `package.json` as **proxy**, frontend is workspace child. All commands from repo root, never `frontend/` directly. Single `npm install` at root installs everything (no more postinstall subprocess = lower RAM on Linux).
 
 `backend/` is a Go HTTP server (`module ndelok-backend`) — separate language, don't edit backend files unless explicitly asked. DB: SQLite via `modernc.org/sqlite` (pure Go, no CGO). DB file: `backend/ndelok.db` (auto-created, not committed).
 
