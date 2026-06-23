@@ -100,6 +100,18 @@ func safeJoin(explorerRoot, projectRoot, reqPath string) (string, error) {
 	if reqPath == "" || reqPath == "/" || reqPath == "root" {
 		return explorerRoot, nil
 	}
+	if reqPath == "/backend/workspaces" || strings.HasPrefix(reqPath, "/backend/workspaces/") {
+		rel := strings.TrimPrefix(reqPath, "/backend/workspaces")
+		target := filepath.Join(projectRoot, "backend", "workspaces", rel)
+		resolved, err := resolveSymlinkPrefix(target)
+		if err == nil {
+			workspacesDir := filepath.Join(projectRoot, "backend", "workspaces")
+			if inAllowedRoot(resolved, workspacesDir) {
+				return resolved, nil
+			}
+		}
+		return "", fmt.Errorf("access denied")
+	}
 	if reqPath == "dir-src" {
 		return filepath.Join(projectRoot, "frontend", "src"), nil
 	}
@@ -148,6 +160,16 @@ func safeJoin(explorerRoot, projectRoot, reqPath string) (string, error) {
 
 // helper to map absolute disk path back to virtual ID
 func getVirtualID(explorerRoot, projectRoot, absPath string) string {
+	// First check if it's in the workspaces folder
+	workspacesDir := filepath.Join(projectRoot, "backend", "workspaces")
+	relWork, err := filepath.Rel(workspacesDir, absPath)
+	if err == nil && !strings.HasPrefix(relWork, "..") {
+		if relWork == "." {
+			return "/backend/workspaces"
+		}
+		return "/backend/workspaces/" + filepath.ToSlash(relWork)
+	}
+
 	relExp, err1 := filepath.Rel(explorerRoot, absPath)
 	if err1 == nil && !strings.HasPrefix(relExp, "..") {
 		if relExp == "." {

@@ -121,6 +121,8 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout, theme, setTheme 
   });
 
   const [cpuHistory, setCpuHistory] = useState<number[]>(Array(20).fill(0));
+  const [ramHistory, setRamHistory] = useState<number[]>(Array(20).fill(0));
+  const [netHistory, setNetHistory] = useState<number[]>(Array(20).fill(0));
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Floating AI Agent States & Handlers
@@ -279,6 +281,9 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout, theme, setTheme 
           network: { up: data.network.up, down: data.network.down },
         });
         setCpuHistory(prev => [...prev.slice(1), data.cpu]);
+        setRamHistory(prev => [...prev.slice(1), data.ram]);
+        const netSpeed = (data.network.down || 0) + (data.network.up || 0);
+        setNetHistory(prev => [...prev.slice(1), netSpeed]);
       } catch {
         // server down — keep showing last values
       }
@@ -289,7 +294,7 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout, theme, setTheme 
     return () => { mounted = false; clearTimeout(timer); };
   }, [currentView]);
 
-  const generatePath = (data: number[], fill = false) => {
+  const generatePath = (data: number[], fill = false, maxVal = 100) => {
     const width = 500;
     const height = 120;
     const padding = 10;
@@ -298,7 +303,7 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout, theme, setTheme 
 
     const points = data.map((val, i) => {
       const x = (i * graphWidth) / (data.length - 1);
-      const y = height - padding - (val / 100) * graphHeight;
+      const y = height - padding - (val / (maxVal || 1)) * graphHeight;
       return `${x},${y}`;
     });
 
@@ -521,103 +526,266 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout, theme, setTheme 
               />
 
               {/* Network + Uptime Card */}
-              <div className="card" style={{ backgroundColor: "var(--card-bg)", minHeight: "170px", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "var(--space-md)" }}>
-                  <h3 className="font-heading" style={{ fontSize: "1.1rem" }}>NETWORK SPEED</h3>
-                  <Network size={24} />
+              <div className="card" style={{ backgroundColor: "var(--card-bg)", minHeight: "115px", height: "100%", padding: "12px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <h3 className="font-heading" style={{ fontSize: "0.8rem", letterSpacing: "0.5px" }}>NETWORK SPEED</h3>
+                  <Network size={16} />
                 </div>
-                <div style={{ display: "flex", gap: "var(--space-md)", flex: 1 }}>
-                  <div style={{ flex: 1, width: "50%", minWidth: 0, padding: "var(--space-sm)", border: "2px solid black", backgroundColor: "var(--system-green)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                    <p className="font-heading" style={{ fontSize: "0.7rem", fontWeight: 700 }}>DOWN</p>
-                    <p className="font-display" style={{ fontSize: "1.8rem" }}>{formatNetSpeed(metrics.network.down)}</p>
+                
+                {/* Horizontal speeds */}
+                <div style={{ display: "flex", gap: "6px", margin: "4px 0" }}>
+                  <div style={{ flex: 1, padding: "4px 6px", border: "2px solid black", backgroundColor: "var(--system-green)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                    <span className="font-heading" style={{ fontSize: "0.55rem", fontWeight: 900, lineHeight: 1 }}>DOWN</span>
+                    <span className="font-display" style={{ fontSize: "1.1rem", lineHeight: 1.1 }}>{formatNetSpeed(metrics.network.down)}</span>
                   </div>
-                  <div style={{ flex: 1, width: "50%", minWidth: 0, padding: "var(--space-sm)", border: "2px solid black", backgroundColor: "var(--card-bg)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                    <p className="font-heading" style={{ fontSize: "0.7rem", fontWeight: 700 }}>UP</p>
-                    <p className="font-display" style={{ fontSize: "1.8rem" }}>{formatNetSpeed(metrics.network.up)}</p>
+                  <div style={{ flex: 1, padding: "4px 6px", border: "2px solid black", backgroundColor: "var(--secondary-bg)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                    <span className="font-heading" style={{ fontSize: "0.55rem", fontWeight: 900, lineHeight: 1 }}>UP</span>
+                    <span className="font-display" style={{ fontSize: "1.1rem", lineHeight: 1.1 }}>{formatNetSpeed(metrics.network.up)}</span>
                   </div>
                 </div>
-                <div style={{ borderTop: "2px solid black", marginTop: "var(--space-sm)", paddingTop: "var(--space-sm)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span className="font-heading" style={{ fontSize: "0.7rem" }}>UPTIME</span>
-                  <span className="font-mono" style={{ fontSize: "0.85rem", fontWeight: 700 }}>{metrics.uptime || "..."}</span>
+
+                {/* Uptime footer */}
+                <div style={{ borderTop: "1.5px solid black", paddingTop: "4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="font-heading" style={{ fontSize: "0.6rem" }}>UPTIME</span>
+                  <span className="font-mono" style={{ fontSize: "0.65rem", fontWeight: 700 }}>{metrics.uptime || "..."}</span>
                 </div>
               </div>
             </div>
 
-            {/* CPU Load History Line Chart */}
-            <div className="card" style={{ backgroundColor: "var(--card-bg)", marginTop: "var(--space-lg)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-md)" }}>
-                <div>
-                  <h3 className="font-heading" style={{ fontSize: "1.1rem" }}>CPU LOAD HISTORY</h3>
-                  <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Real-time 20-second CPU core load history</p>
-                </div>
-                <div style={{ display: "flex", gap: "var(--space-md)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-xs)" }}>
-                    <span style={{ display: "inline-block", width: "12px", height: "12px", backgroundColor: "var(--system-yellow)", border: "1.5px solid black" }}></span>
-                    <span className="font-heading" style={{ fontSize: "0.75rem" }}>CPU USAGE (CURRENT: {metrics.cpu.toFixed(1)}%)</span>
+            <div className="charts-grid">
+              {/* CPU Load History Line Chart */}
+              <div className="card" style={{ backgroundColor: "var(--card-bg)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-md)" }}>
+                  <div>
+                    <h3 className="font-heading" style={{ fontSize: "1.1rem" }}>CPU LOAD HISTORY</h3>
+                    <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Real-time 20-second CPU core load history</p>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-xs)" }}>
-                    <span className="font-heading" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>MAX: {Math.max(...cpuHistory)}%</span>
+                  <div style={{ display: "flex", gap: "var(--space-md)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-xs)" }}>
+                      <span style={{ display: "inline-block", width: "12px", height: "12px", backgroundColor: "var(--system-yellow)", border: "1.5px solid black" }}></span>
+                      <span className="font-heading" style={{ fontSize: "0.75rem" }}>CPU (CURRENT: {metrics.cpu.toFixed(1)}%)</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-xs)" }}>
+                      <span className="font-heading" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>MAX: {Math.max(...cpuHistory).toFixed(1)}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ border: "2px solid black", padding: 0, backgroundColor: "var(--secondary-bg)", position: "relative", overflow: "hidden" }}>
+                  <svg viewBox="0 0 500 120" preserveAspectRatio="none" style={{ width: "100%", height: "140px", display: "block" }}>
+                    {/* Horizontal Grid lines */}
+                    <line x1="0" y1="10" x2="500" y2="10" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                    <line x1="0" y1="35" x2="500" y2="35" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                    <line x1="0" y1="60" x2="500" y2="60" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                    <line x1="0" y1="85" x2="500" y2="85" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                    <line x1="0" y1="110" x2="500" y2="110" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+
+                    {/* Vertical Grid lines */}
+                    {Array.from({ length: 9 }).map((_, i) => {
+                      const x = (i + 1) * 50;
+                      return (
+                        <line key={i} x1={x} y1="0" x2={x} y2="120" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="2,2" />
+                      );
+                    })}
+
+                    {/* CPU Fill Area */}
+                    <path
+                      d={generatePath(cpuHistory, true)}
+                      fill="var(--system-yellow)"
+                      fillOpacity="0.4"
+                    />
+
+                    {/* CPU Yellow Background Outline Line */}
+                    <path
+                      d={generatePath(cpuHistory, false)}
+                      fill="none"
+                      stroke="var(--system-yellow)"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+
+                    {/* CPU Thin Black Outline on top for contrast */}
+                    <path
+                      d={generatePath(cpuHistory, false)}
+                      fill="none"
+                      stroke="black"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+
+                  {/* Exposed Y-Axis Labels */}
+                  <div style={{ position: "absolute", top: "12px", left: "16px", pointerEvents: "none" }} className="font-mono">
+                    <span style={{ fontSize: "0.65rem", padding: "2px 4px", border: "1px solid black", backgroundColor: "var(--card-bg)", boxShadow: "1px 1px 0px black" }}>
+                      100%
+                    </span>
+                  </div>
+                  <div style={{ position: "absolute", bottom: "12px", left: "16px", pointerEvents: "none" }} className="font-mono">
+                    <span style={{ fontSize: "0.65rem", padding: "2px 4px", border: "1px solid black", backgroundColor: "var(--card-bg)", boxShadow: "1px 1px 0px black" }}>
+                      0%
+                    </span>
                   </div>
                 </div>
               </div>
 
-              <div style={{ border: "2px solid black", padding: 0, backgroundColor: "var(--secondary-bg)", position: "relative", overflow: "hidden" }}>
-                <svg viewBox="0 0 500 120" preserveAspectRatio="none" style={{ width: "100%", height: "140px", display: "block" }}>
-                  {/* Horizontal Grid lines */}
-                  <line x1="0" y1="10" x2="500" y2="10" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
-                  <line x1="0" y1="35" x2="500" y2="35" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
-                  <line x1="0" y1="60" x2="500" y2="60" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
-                  <line x1="0" y1="85" x2="500" y2="85" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
-                  <line x1="0" y1="110" x2="500" y2="110" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
-
-                  {/* Vertical Grid lines */}
-                  {Array.from({ length: 9 }).map((_, i) => {
-                    const x = (i + 1) * 50;
-                    return (
-                      <line key={i} x1={x} y1="0" x2={x} y2="120" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="2,2" />
-                    );
-                  })}
-
-                  {/* CPU Fill Area */}
-                  <path
-                    d={generatePath(cpuHistory, true)}
-                    fill="var(--system-yellow)"
-                    fillOpacity="0.4"
-                  />
-
-                  {/* CPU Yellow Background Outline Line */}
-                  <path
-                    d={generatePath(cpuHistory, false)}
-                    fill="none"
-                    stroke="var(--system-yellow)"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-
-                  {/* CPU Thin Black Outline on top for contrast */}
-                  <path
-                    d={generatePath(cpuHistory, false)}
-                    fill="none"
-                    stroke="black"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-
-                {/* Exposed Y-Axis Labels */}
-                <div style={{ position: "absolute", top: "12px", left: "16px", pointerEvents: "none" }} className="font-mono">
-                  <span style={{ fontSize: "0.65rem", padding: "2px 4px", border: "1px solid black", backgroundColor: "var(--card-bg)", boxShadow: "1px 1px 0px black" }}>
-                    100%
-                  </span>
+              {/* RAM Load History Line Chart */}
+              <div className="card" style={{ backgroundColor: "var(--card-bg)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-md)" }}>
+                  <div>
+                    <h3 className="font-heading" style={{ fontSize: "1.1rem" }}>RAM LOAD HISTORY</h3>
+                    <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Real-time 20-second RAM memory load history</p>
+                  </div>
+                  <div style={{ display: "flex", gap: "var(--space-md)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-xs)" }}>
+                      <span style={{ display: "inline-block", width: "12px", height: "12px", backgroundColor: "var(--system-blue)", border: "1.5px solid black" }}></span>
+                      <span className="font-heading" style={{ fontSize: "0.75rem" }}>RAM (CURRENT: {metrics.ram.toFixed(1)}%)</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-xs)" }}>
+                      <span className="font-heading" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>MAX: {Math.max(...ramHistory).toFixed(1)}%</span>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ position: "absolute", bottom: "12px", left: "16px", pointerEvents: "none" }} className="font-mono">
-                  <span style={{ fontSize: "0.65rem", padding: "2px 4px", border: "1px solid black", backgroundColor: "var(--card-bg)", boxShadow: "1px 1px 0px black" }}>
-                    0%
-                  </span>
+
+                <div style={{ border: "2px solid black", padding: 0, backgroundColor: "var(--secondary-bg)", position: "relative", overflow: "hidden" }}>
+                  <svg viewBox="0 0 500 120" preserveAspectRatio="none" style={{ width: "100%", height: "140px", display: "block" }}>
+                    {/* Horizontal Grid lines */}
+                    <line x1="0" y1="10" x2="500" y2="10" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                    <line x1="0" y1="35" x2="500" y2="35" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                    <line x1="0" y1="60" x2="500" y2="60" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                    <line x1="0" y1="85" x2="500" y2="85" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                    <line x1="0" y1="110" x2="500" y2="110" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+
+                    {/* Vertical Grid lines */}
+                    {Array.from({ length: 9 }).map((_, i) => {
+                      const x = (i + 1) * 50;
+                      return (
+                        <line key={i} x1={x} y1="0" x2={x} y2="120" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="2,2" />
+                      );
+                    })}
+
+                    {/* RAM Fill Area */}
+                    <path
+                      d={generatePath(ramHistory, true, 100)}
+                      fill="var(--system-blue)"
+                      fillOpacity="0.4"
+                    />
+
+                    {/* RAM Blue Outline Line */}
+                    <path
+                      d={generatePath(ramHistory, false, 100)}
+                      fill="none"
+                      stroke="var(--system-blue)"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+
+                    {/* RAM Thin Black Outline on top for contrast */}
+                    <path
+                      d={generatePath(ramHistory, false, 100)}
+                      fill="none"
+                      stroke="black"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+
+                  {/* Exposed Y-Axis Labels */}
+                  <div style={{ position: "absolute", top: "12px", left: "16px", pointerEvents: "none" }} className="font-mono">
+                    <span style={{ fontSize: "0.65rem", padding: "2px 4px", border: "1px solid black", backgroundColor: "var(--card-bg)", boxShadow: "1px 1px 0px black" }}>
+                      100%
+                    </span>
+                  </div>
+                  <div style={{ position: "absolute", bottom: "12px", left: "16px", pointerEvents: "none" }} className="font-mono">
+                    <span style={{ fontSize: "0.65rem", padding: "2px 4px", border: "1px solid black", backgroundColor: "var(--card-bg)", boxShadow: "1px 1px 0px black" }}>
+                      0%
+                    </span>
+                  </div>
                 </div>
               </div>
+
+              {/* Internet Speed History Line Chart */}
+              {(() => {
+                const maxNetVal = Math.max(...netHistory, 1024); // at least 1 KB/s
+                const currentNetSpeed = (metrics.network.down || 0) + (metrics.network.up || 0);
+                return (
+                  <div className="card" style={{ backgroundColor: "var(--card-bg)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-md)" }}>
+                      <div>
+                        <h3 className="font-heading" style={{ fontSize: "1.1rem" }}>INTERNET SPEED</h3>
+                        <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Real-time 20s traffic (UP + DOWN)</p>
+                      </div>
+                      <div style={{ display: "flex", gap: "var(--space-md)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-xs)" }}>
+                          <span style={{ display: "inline-block", width: "12px", height: "12px", backgroundColor: "var(--system-green)", border: "1.5px solid black" }}></span>
+                          <span className="font-heading" style={{ fontSize: "0.75rem" }}>SPEED ({formatNetSpeed(currentNetSpeed)})</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ border: "2px solid black", padding: 0, backgroundColor: "var(--secondary-bg)", position: "relative", overflow: "hidden" }}>
+                      <svg viewBox="0 0 500 120" preserveAspectRatio="none" style={{ width: "100%", height: "140px", display: "block" }}>
+                        {/* Horizontal Grid lines */}
+                        <line x1="0" y1="10" x2="500" y2="10" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                        <line x1="0" y1="35" x2="500" y2="35" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                        <line x1="0" y1="60" x2="500" y2="60" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                        <line x1="0" y1="85" x2="500" y2="85" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                        <line x1="0" y1="110" x2="500" y2="110" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+
+                        {/* Vertical Grid lines */}
+                        {Array.from({ length: 9 }).map((_, i) => {
+                          const x = (i + 1) * 50;
+                          return (
+                            <line key={i} x1={x} y1="0" x2={x} y2="120" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="2,2" />
+                          );
+                        })}
+
+                        {/* Net Fill Area */}
+                        <path
+                          d={generatePath(netHistory, true, maxNetVal)}
+                          fill="var(--system-green)"
+                          fillOpacity="0.4"
+                        />
+
+                        {/* Net Green Outline Line */}
+                        <path
+                          d={generatePath(netHistory, false, maxNetVal)}
+                          fill="none"
+                          stroke="var(--system-green)"
+                          strokeWidth="4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+
+                        {/* Net Thin Black Outline on top for contrast */}
+                        <path
+                          d={generatePath(netHistory, false, maxNetVal)}
+                          fill="none"
+                          stroke="black"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+
+                      {/* Exposed Y-Axis Labels */}
+                      <div style={{ position: "absolute", top: "12px", left: "16px", pointerEvents: "none" }} className="font-mono">
+                        <span style={{ fontSize: "0.65rem", padding: "2px 4px", border: "1px solid black", backgroundColor: "var(--card-bg)", boxShadow: "1px 1px 0px black" }}>
+                          {formatNetSpeed(maxNetVal)}
+                        </span>
+                      </div>
+                      <div style={{ position: "absolute", bottom: "12px", left: "16px", pointerEvents: "none" }} className="font-mono">
+                        <span style={{ fontSize: "0.65rem", padding: "2px 4px", border: "1px solid black", backgroundColor: "var(--card-bg)", boxShadow: "1px 1px 0px black" }}>
+                          0 KB/S
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* System Status Table Mock */}
@@ -692,27 +860,32 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout, theme, setTheme 
 
 function MetricCard({ title, value, icon, color, spec }: any) {
   return (
-    <div className="card" style={{ backgroundColor: color, position: "relative", minHeight: "170px", height: "100%" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "var(--space-md)" }}>
-        <h3 className="font-heading" style={{ fontSize: "1.1rem", maxWidth: "150px" }}>{title}</h3>
+    <div className="card" style={{ backgroundColor: color, position: "relative", minHeight: "115px", height: "100%", padding: "12px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 className="font-heading" style={{ fontSize: "0.8rem", letterSpacing: "0.5px" }}>{title}</h3>
         {icon}
       </div>
-      <p className="font-display" style={{ fontSize: "4.5rem", lineHeight: 0.95 }}>{value}</p>
+      
+      {/* Centered value container */}
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", flex: 1, margin: "4px 0" }}>
+        <p className="font-display" style={{ fontSize: "3rem", lineHeight: 1, textAlign: "center" }}>{value}</p>
+      </div>
+
       {spec && (
         <div 
           className="font-mono"
           style={{ 
             position: "absolute",
-            bottom: "12px",
-            right: "12px",
+            bottom: "8px",
+            right: "8px",
             backgroundColor: "var(--card-bg)", 
             border: "2px solid #000000", 
-            padding: "2px 8px", 
-            fontSize: "0.72rem", 
+            padding: "1px 6px", 
+            fontSize: "0.65rem", 
             fontWeight: 700,
             color: "var(--text)",
-            boxShadow: "2px 2px 0px #000000",
-            maxWidth: "calc(100% - 24px)",
+            boxShadow: "1.5px 1.5px 0px #000000",
+            maxWidth: "110px",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap"

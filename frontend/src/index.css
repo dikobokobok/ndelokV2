@@ -141,18 +141,38 @@ h1, h2, h3, h4, h5, h6 {
 /* Metric Cards Grid */
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: var(--space-lg);
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1024px) {
+  .metrics-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
   .metrics-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 480px) {
   .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Charts Grid (side-by-side layout) */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg);
+  margin-top: var(--space-lg);
+}
+
+@media (max-width: 1024px) {
+  .charts-grid {
     grid-template-columns: 1fr;
   }
 }
