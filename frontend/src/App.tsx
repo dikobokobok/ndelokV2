@@ -3257,6 +3257,25 @@ function ExplorerView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [clipboard, setClipboard] = useState<{ itemId: string; action: "copy" | "cut" } | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
+  const [resolvedRootPath, setResolvedRootPath] = useState<string>("ROOT (/)");
+
+  useEffect(() => {
+    const fetchRootPath = async () => {
+      try {
+        const res = await apiFetch("/api/explorer/root");
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.root) {
+            setResolvedRootPath(`ROOT (${data.root})`);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch explorer root path", err);
+      }
+    };
+    fetchRootPath();
+  }, []);
 
   // Modals for CRUD
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -3542,7 +3561,34 @@ function ExplorerView() {
   };
 
   // Selection list calculation
-  const filteredItems = fs;
+  const filteredItems = (() => {
+    // 1. Filter hidden files if showHidden is false
+    const items = showHidden ? fs : fs.filter(item => !item.name.startsWith("."));
+
+    // 2. Sort: hidden directories -> normal directories -> hidden files -> normal files
+    return [...items].sort((a, b) => {
+      const aIsDir = a.type === "directory";
+      const bIsDir = b.type === "directory";
+      const aIsHidden = a.name.startsWith(".");
+      const bIsHidden = b.name.startsWith(".");
+
+      const getCategory = (isDir: boolean, isHidden: boolean) => {
+        if (isDir && isHidden) return 0;
+        if (isDir && !isHidden) return 1;
+        if (!isDir && isHidden) return 2;
+        return 3;
+      };
+
+      const catA = getCategory(aIsDir, aIsHidden);
+      const catB = getCategory(bIsDir, bIsHidden);
+
+      if (catA !== catB) {
+        return catA - catB;
+      }
+
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+    });
+  })();
 
   const selectedItem = fs.find(x => x.id === selectedId);
 
@@ -3832,7 +3878,7 @@ function ExplorerView() {
         <div style={leftPaneStyle}>
           <span className="font-heading" style={{ fontSize: "0.75rem", letterSpacing: "1px", textTransform: "uppercase" }}>Quick Access</span>
           <div style={pathShortcutStyle(currentFolderId === "/" || currentFolderId === "root")} onClick={() => { setCurrentFolderId("/"); setSelectedId(null); setSearchQuery(""); }}>
-            <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> ROOT (/)
+            <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> {resolvedRootPath}
           </div>
           <div style={pathShortcutStyle(currentFolderId === "/frontend/src" || currentFolderId === "dir-src")} onClick={() => { setCurrentFolderId("/frontend/src"); setSelectedId(null); setSearchQuery(""); }}>
             <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> src/
@@ -3842,6 +3888,9 @@ function ExplorerView() {
           </div>
           <div style={pathShortcutStyle(currentFolderId === "/frontend/public" || currentFolderId === "dir-public")} onClick={() => { setCurrentFolderId("/frontend/public"); setSelectedId(null); setSearchQuery(""); }}>
             <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> public/
+          </div>
+          <div style={pathShortcutStyle(currentFolderId === "/backend/workspaces")} onClick={() => { setCurrentFolderId("/backend/workspaces"); setSelectedId(null); setSearchQuery(""); }}>
+            <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> workspaces/
           </div>
 
           <div style={{ marginTop: "auto", borderTop: "2px solid black", paddingTop: "8px" }}>
@@ -4017,6 +4066,18 @@ function ExplorerView() {
               }}
             >
               PASTE
+            </button>
+            <button 
+              className="btn" 
+              onClick={() => setShowHidden(prev => !prev)}
+              style={{ 
+                padding: "4px 10px", 
+                fontSize: "0.7rem", 
+                backgroundColor: showHidden ? "var(--system-green)" : "var(--card-bg)", 
+                boxShadow: "3px 3px 0px black" 
+              }}
+            >
+              {showHidden ? "HIDE HIDDEN" : "SHOW HIDDEN"}
             </button>
           </div>
 

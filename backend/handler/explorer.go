@@ -31,16 +31,24 @@ func getProjectRoot() (string, error) {
 	return filepath.Dir(cwd), nil
 }
 
-// Helper to get system explorer root (C:\ on Windows, user home on Linux)
+// Helper to get system explorer root (C:\Users\ on Windows, /home/ on Linux)
 func getExplorerRoot() string {
 	if runtime.GOOS == "windows" {
-		return "C:\\"
+		return "C:\\Users\\"
 	}
-	home, err := os.UserHomeDir()
-	if err == nil {
-		return home
+	return "/home/"
+}
+
+// ExplorerRootPath handles GET /api/explorer/root
+func ExplorerRootPath(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-	return "/"
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"root": getExplorerRoot(),
+	})
 }
 
 // inAllowedRoot checks if path resolves within one of the allowed roots

@@ -140,6 +140,7 @@ func main() {
 	mux.HandleFunc("/api/deploy/projects/", handler.RequireAuth(handler.DeployProjectByID))
 
 	// File Explorer Endpoints
+	mux.HandleFunc("/api/explorer/root", handler.RequireAuth(handler.ExplorerRootPath))
 	mux.HandleFunc("/api/explorer/list", handler.RequireAuth(handler.ExplorerList))
 	mux.HandleFunc("/api/explorer/content", handler.RequireAuth(handler.ExplorerGetContent))
 	mux.HandleFunc("/api/explorer/save", handler.RequireAuth(handler.ExplorerSaveContent))
