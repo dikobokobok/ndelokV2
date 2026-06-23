@@ -178,7 +178,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Mobile sidebar */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .mobile-menu-btn { display: flex !important; }
   .sidebar {
     position: fixed !important;
@@ -204,4 +204,110 @@ h1, h2, h3, h4, h5, h6 {
     padding-top: 60px !important;
   }
 }
+
+/* Responsive view layouts */
+.logs-term-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+  height: calc(100vh - 190px);
+  margin-top: var(--space-md);
+}
+
+@media (max-width: 768px) {
+  .logs-term-container {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .logs-term-container > div {
+    height: 400px;
+  }
+}
+
+.explorer-layout {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.explorer-left-pane {
+  flex: 0 0 200px;
+  background-color: var(--card-bg);
+  border: 3px solid black;
+  box-shadow: 4px 4px 0px black;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.explorer-right-pane {
+  flex: 1;
+  background-color: var(--card-bg);
+  border: 3px solid black;
+  box-shadow: 8px 8px 0px black;
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-height: 480px;
+}
+
+@media (max-width: 768px) {
+  .explorer-layout {
+    flex-direction: column;
+  }
+  .explorer-left-pane {
+    flex: none;
+    width: 100%;
+  }
+  .explorer-right-pane {
+    min-height: 350px;
+  }
+}
+
+.deploy-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+@media (max-width: 768px) {
+  .deploy-stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.page-header {
+  margin-bottom: var(--space-lg);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.page-title {
+  font-size: 2.8rem;
+  letter-spacing: -1px;
+}
+
+@media (max-width: 768px) {
+  .page-title {
+    font-size: 1.8rem;
+    letter-spacing: -0.5px;
+  }
+}
+
+.spin {
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+
 

@@ -486,8 +486,8 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout, theme, setTheme 
       <main style={{ flex: 1, padding: "var(--space-lg)", overflowY: "auto" }}>
         {currentView === "Dashboard" && (
           <>
-            <header style={{ marginBottom: "var(--space-lg)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>DASHBOARD</h2>
+            <header className="page-header">
+              <h2 className="page-title">DASHBOARD</h2>
               <div className="card" style={{ padding: "var(--space-sm) var(--space-md)", backgroundColor: "var(--card-bg)" }}>
                 <span className="font-mono" style={{ fontSize: "0.85rem", fontWeight: 700 }}>SERVER: PRODUCTION-01</span>
               </div>
@@ -827,9 +827,10 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout, theme, setTheme 
         {currentView === "Deploy" && <DeployView />}
         {currentView === "Explorer" && <ExplorerView />}
         {currentView === "Logs & Term" && <LogsTermView />}
-        {currentView !== "Dashboard" && currentView !== "Plugins" && currentView !== "Deploy" && currentView !== "Explorer" && currentView !== "Logs & Term" && currentView !== "AI Agent" && (
+        {currentView === "Settings" && <SettingsView />}
+        {currentView !== "Dashboard" && currentView !== "Plugins" && currentView !== "Deploy" && currentView !== "Explorer" && currentView !== "Logs & Term" && currentView !== "Settings" && currentView !== "AI Agent" && (
           <div>
-            <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>{currentView.toUpperCase()}</h2>
+            <h2 className="page-title">{(currentView as string).toUpperCase()}</h2>
             <p className="font-mono" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "var(--space-md)" }}>
               Under construction. Coming soon.
             </p>
@@ -885,27 +886,27 @@ function MetricCard({ title, value, icon, color, spec }: any) {
       </div>
 
       {spec && (
-        <div 
-          className="font-mono"
-          style={{ 
-            position: "absolute",
-            bottom: "8px",
-            right: "8px",
-            backgroundColor: "var(--card-bg)", 
-            border: "2px solid #000000", 
-            padding: "1px 6px", 
-            fontSize: "0.65rem", 
-            fontWeight: 700,
-            color: "var(--text)",
-            boxShadow: "1.5px 1.5px 0px #000000",
-            maxWidth: "110px",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap"
-          }}
-          title={spec}
-        >
-          {spec}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
+          <div 
+            className="font-mono"
+            style={{ 
+              backgroundColor: "var(--card-bg)", 
+              border: "2px solid #000000", 
+              padding: "1px 6px", 
+              fontSize: "0.65rem", 
+              fontWeight: 700,
+              color: "var(--text)",
+              boxShadow: "1.5px 1.5px 0px #000000",
+              maxWidth: "100%",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              zIndex: 1
+            }}
+            title={spec}
+          >
+            {spec}
+          </div>
         </div>
       )}
     </div>
@@ -1111,9 +1112,9 @@ function PluginsView() {
   return (
     <div>
       {/* Header */}
-      <header style={{ marginBottom: "var(--space-lg)", display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: "var(--space-md)" }}>
+      <header className="page-header" style={{ alignItems: "flex-end" }}>
         <div>
-          <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>PLUGINS</h2>
+          <h2 className="page-title">PLUGINS</h2>
           <p className="font-mono" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "var(--space-xs)" }}>
             Extend server capabilities with Neobrutalist modules.
           </p>
@@ -1444,6 +1445,7 @@ function PluginsView() {
                       bottom: "20px",
                       right: "20px",
                       width: "320px",
+                      maxWidth: "90%",
                       backgroundColor: "var(--card-bg)",
                       border: "3px solid black",
                       boxShadow: "4px 4px 0px black",
@@ -2475,20 +2477,15 @@ function DeployView() {
   return (
     <div>
       {/* Header */}
-      <header style={{ marginBottom: "var(--space-lg)" }}>
-        <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>DEPLOY SERVICES</h2>
+      <header className="page-header">
+        <h2 className="page-title">DEPLOY SERVICES</h2>
         <p className="font-mono" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "var(--space-xs)" }}>
           Manage production servers, containers, port binding, and virtualized workloads.
         </p>
       </header>
 
       {/* Deploy Stats Grid */}
-      <div style={{ 
-        display: "grid", 
-        gridTemplateColumns: "repeat(3, 1fr)", 
-        gap: "var(--space-md)",
-        marginBottom: "var(--space-lg)"
-      }}>
+      <div className="deploy-stats-grid">
         {/* Total Project Card */}
         <div className="card" style={{ backgroundColor: "var(--system-blue)", display: "flex", flexDirection: "column", padding: "var(--space-sm) var(--space-md)" }}>
           <span className="font-heading" style={{ fontSize: "0.75rem", color: "black", fontWeight: 700 }}>TOTAL PROJECTS</span>
@@ -2701,6 +2698,7 @@ function DeployView() {
                 bottom: "20px",
                 right: "20px",
                 width: "320px",
+                maxWidth: "90%",
                 backgroundColor: "white",
                 border: "3px solid black",
                 boxShadow: "4px 4px 0px black",
@@ -3780,34 +3778,6 @@ function ExplorerView() {
 
 
   // Styles
-  const layoutStyle = {
-    display: "flex",
-    gap: "var(--space-md)",
-    marginTop: "var(--space-md)"
-  };
-
-  const leftPaneStyle = {
-    flex: "0 0 200px",
-    backgroundColor: "var(--card-bg)",
-    border: "3px solid black",
-    boxShadow: "4px 4px 0px black",
-    padding: "12px",
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: "12px"
-  };
-
-  const rightPaneStyle = {
-    flex: 1,
-    backgroundColor: "var(--card-bg)",
-    border: "3px solid black",
-    boxShadow: "8px 8px 0px black",
-    padding: "var(--space-md)",
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: "var(--space-md)",
-    minHeight: "480px"
-  };
 
   const toolbarStyle = {
     display: "flex",
@@ -3956,6 +3926,7 @@ function ExplorerView() {
           bottom: "20px",
           right: "20px",
           width: "320px",
+          maxWidth: "90%",
           backgroundColor: "var(--card-bg)",
           border: "3px solid black",
           boxShadow: "4px 4px 0px black",
@@ -4050,18 +4021,18 @@ function ExplorerView() {
   return (
     <div>
       {/* Header */}
-      <header style={{ marginBottom: "var(--space-lg)" }}>
-        <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>FILE EXPLORER</h2>
+      <header className="page-header">
+        <h2 className="page-title">FILE EXPLORER</h2>
         <p className="font-mono" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "var(--space-xs)" }}>
           Browse server directories, view logs, edit configuration scripts, and execute file system operations.
         </p>
       </header>
 
       {/* Explorer Layout */}
-      <div style={layoutStyle}>
+      <div className="explorer-layout">
         
         {/* Left pane: Quick Navigation bookmarks */}
-        <div style={leftPaneStyle}>
+        <div className="explorer-left-pane">
           <span className="font-heading" style={{ fontSize: "0.75rem", letterSpacing: "1px", textTransform: "uppercase" }}>Quick Access</span>
           <div style={pathShortcutStyle(currentFolderId === "/" || currentFolderId === "root")} onClick={() => { setCurrentFolderId("/"); setSelectedId(null); setSearchQuery(""); }}>
             <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> {resolvedRootPath}
@@ -4089,10 +4060,10 @@ function ExplorerView() {
 
         {/* Right pane: Core File Manager */}
         <div 
+          className="explorer-right-pane"
           style={{
-            ...rightPaneStyle,
-            backgroundColor: isDragOverPane ? "var(--system-green)" : "var(--card-bg)",
-            border: isDragOverPane ? "3px dashed var(--system-green)" : "3px solid black"
+            backgroundColor: isDragOverPane ? "var(--system-green)" : undefined,
+            border: isDragOverPane ? "3px dashed var(--system-green)" : undefined
           }}
           onDragOver={(e) => { e.preventDefault(); setIsDragOverPane(true); }}
           onDragLeave={() => setIsDragOverPane(false)}
@@ -4511,15 +4482,8 @@ interface LogItem {
 }
 
 function LogsTermView() {
-  const [logs, setLogs] = useState<LogItem[]>([
-    { timestamp: "01:52:10", level: "INFO", source: "SYSTEM", message: "Ndelok daemon listener initialized successfully." },
-    { timestamp: "01:52:12", level: "INFO", source: "ZEROTIER", message: "Joined virtual overlay network 8056c85e45c71a39." },
-    { timestamp: "01:52:15", level: "INFO", source: "DOCKER", message: "Container database-postgres started on port 5432." },
-    { timestamp: "01:52:18", level: "WARN", source: "MONITOR", message: "CPU Core #2 temperature spiked above 78C." },
-    { timestamp: "01:52:20", level: "INFO", source: "CLOUDFLARE", message: "Tunnel connection established to PoP CGK." },
-    { timestamp: "01:52:25", level: "ERROR", source: "SYSTEM", message: "Failed healthcheck response on payment-system:3002." },
-    { timestamp: "01:52:26", level: "WARN", source: "PM2", message: "Process payment-system restarted automatically (exit code 1)." }
-  ]);
+  const [logs, setLogs] = useState<LogItem[]>([]);
+  const lastClearedKeyRef = useRef<string | null>(null);
 
   const [isStreaming, setIsStreaming] = useState(true);
   const [logFilter, setLogFilter] = useState<"ALL" | "INFO" | "WARN" | "ERROR">("ALL");
@@ -4542,34 +4506,67 @@ function LogsTermView() {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
-  // Real-time system log generator
+  // Real-time system log fetcher from backend
   useEffect(() => {
     if (!isStreaming) return;
 
-    const logTemplates = [
-      { level: "INFO" as const, source: "MONITOR", message: "CPU load stabilized at 24%. Memory: 312MB / 2048MB." },
-      { level: "INFO" as const, source: "CLOUDFLARE", message: "Tunnel latency check PoP CGK: 12ms | PoP SIN: 24ms." },
-      { level: "INFO" as const, source: "ZEROTIER", message: "Peer transmission check: 12 active connections." },
-      { level: "WARN" as const, source: "SYSTEM", message: "Disk storage space usage reached 82% on root partition." },
-      { level: "INFO" as const, source: "DOCKER", message: "Garbage collection completed. Pruned 0 unused layers." },
-      { level: "ERROR" as const, source: "AUTHENTICATION", message: "Invalid API secret signature from IP 182.253.12.8." },
-      { level: "WARN" as const, source: "DATABASE", message: "Connection pool exhausted (100/100 connections in use) - scaling queue." }
-    ];
+    let mounted = true;
+    let timer: ReturnType<typeof setTimeout>;
 
-    const interval = setInterval(() => {
-      const template = logTemplates[Math.floor(Math.random() * logTemplates.length)];
-      const now = new Date();
-      const timeStr = now.toTimeString().split(" ")[0];
+    const parseSource = (msg: string): string => {
+      const m = msg.toLowerCase();
+      if (m.includes("zerotier")) return "ZEROTIER";
+      if (m.includes("tmux")) return "TMUX";
+      if (m.includes("project")) return "DEPLOY";
+      if (m.includes("login") || m.includes("logged in") || m.includes("logged out") || m.includes("registered")) return "AUTH";
+      if (m.includes("cpu") || m.includes("memory") || m.includes("disk") || m.includes("storage")) return "MONITOR";
+      if (m.includes("database") || m.includes("db ")) return "DATABASE";
+      return "SYSTEM";
+    };
 
-      setLogs(prev => [...prev, {
-        timestamp: timeStr,
-        level: template.level,
-        source: template.source,
-        message: template.message
-      }]);
-    }, 3500);
+    const fetchLogs = async () => {
+      try {
+        const res = await apiFetch("/api/metrics");
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        if (!mounted) return;
 
-    return () => clearInterval(interval);
+        if (data.logs && Array.isArray(data.logs)) {
+          // The API returns logs in DESC order (newest first). Let's reverse to show oldest first in chronological order.
+          const fetched: LogItem[] = data.logs.slice().reverse().map((l: any) => ({
+            timestamp: l.time,
+            level: l.level as any,
+            source: parseSource(l.msg),
+            message: l.msg
+          }));
+
+          setLogs(prev => {
+            let uniqueNew = fetched;
+            if (lastClearedKeyRef.current) {
+              const idx = fetched.findIndex(f => `${f.timestamp}_${f.level}_${f.message}` === lastClearedKeyRef.current);
+              if (idx !== -1) {
+                uniqueNew = fetched.slice(idx + 1);
+              }
+            }
+            const existingKeys = new Set(prev.map(p => `${p.timestamp}_${p.level}_${p.message}`));
+            const filteredNew = uniqueNew.filter(f => !existingKeys.has(`${f.timestamp}_${f.level}_${f.message}`));
+            return [...prev, ...filteredNew];
+          });
+        }
+      } catch (err) {
+        // Ignored
+      }
+      if (mounted) {
+        timer = setTimeout(fetchLogs, 2000);
+      }
+    };
+
+    fetchLogs();
+
+    return () => {
+      mounted = false;
+      clearTimeout(timer);
+    };
   }, [isStreaming]);
 
   // Terminal xterm.js + WebSocket init — runs ONCE, never re-creates
@@ -4630,14 +4627,6 @@ function LogsTermView() {
   });
 
   // Styles
-  const containerStyle = {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "var(--space-md)",
-    height: "calc(100vh - 190px)",
-    marginTop: "var(--space-md)"
-  };
-
   const consoleBoxStyle = {
     backgroundColor: "white",
     border: "3px solid black",
@@ -4653,7 +4642,9 @@ function LogsTermView() {
     padding: "8px 12px",
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center"
+    alignItems: "center",
+    flexWrap: "wrap" as const,
+    gap: "var(--space-xs)"
   });
 
   const streamBodyStyle = {
@@ -4670,18 +4661,26 @@ function LogsTermView() {
     alignItems: "center"
   };
 
+  const handleClear = () => {
+    if (logs.length > 0) {
+      const lastLog = logs[logs.length - 1];
+      lastClearedKeyRef.current = `${lastLog.timestamp}_${lastLog.level}_${lastLog.message}`;
+    }
+    setLogs([]);
+  };
+
   return (
     <div>
       {/* Header */}
-      <header style={{ marginBottom: "var(--space-lg)" }}>
-        <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>LOGS & TERMINAL</h2>
+      <header className="page-header">
+        <h2 className="page-title">LOGS & TERMINAL</h2>
         <p className="font-mono" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "var(--space-xs)" }}>
           Monitor live system logs stream and execute server operations inside the interactive SSH shell console.
         </p>
       </header>
 
       {/* Main split grid */}
-      <div style={containerStyle}>
+      <div className="logs-term-container">
         
         {/* Left Pane: Log Stream */}
         <div style={consoleBoxStyle}>
@@ -4729,7 +4728,7 @@ function LogsTermView() {
               {/* Clear button */}
               <button 
                 className="btn"
-                onClick={() => setLogs([])}
+                onClick={handleClear}
                 style={{
                   padding: "2px 6px",
                   fontSize: "0.6rem",
@@ -4890,6 +4889,114 @@ function LogsTermView() {
         </>
       )}
 
+    </div>
+  );
+}
+
+function SettingsView() {
+  const [isPending, setIsPending] = useState<"shutdown" | "reboot" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const handleSystemOp = async (op: "shutdown" | "reboot") => {
+    setIsPending(op);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await apiFetch(`/api/system/${op}`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || `Failed to initiate ${op}`);
+      }
+      setSuccess(`System ${op === "shutdown" ? "shutdown" : "reboot"} initiated successfully.`);
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred.");
+    } finally {
+      setIsPending(null);
+    }
+  };
+
+  return (
+    <div>
+      <header className="page-header">
+        <h2 className="page-title">SETTINGS</h2>
+        <p className="font-mono" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "var(--space-xs)" }}>
+          Configure system options and manage server power status.
+        </p>
+      </header>
+
+      <div style={{ maxWidth: "600px", display: "flex", flexDirection: "column", gap: "var(--space-lg)" }}>
+        {/* System Operations Section */}
+        <div className="card" style={{ display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+          <h3 className="font-heading" style={{ fontSize: "1.2rem", borderBottom: "2px solid black", paddingBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <Server size={18} /> SYSTEM OPERATIONS
+          </h3>
+
+          <p className="font-mono" style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+            Execute power operations directly on the host server machine. These actions are immediate and will terminate all running services and active sessions.
+          </p>
+
+          {error && (
+            <div className="badge" style={{ backgroundColor: "var(--system-red)", width: "100%", padding: "8px", marginBottom: "8px" }}>
+              ERROR: {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="badge" style={{ backgroundColor: "var(--system-green)", width: "100%", padding: "8px", marginBottom: "8px" }}>
+              {success}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: "var(--space-md)", flexWrap: "wrap", marginTop: "8px" }}>
+            {/* Shutdown Button */}
+            <button
+              className="btn font-heading"
+              onClick={() => {
+                if (window.confirm("Are you sure you want to SHUT DOWN the host system? All services will stop immediately.")) {
+                  handleSystemOp("shutdown");
+                }
+              }}
+              disabled={isPending !== null}
+              style={{
+                backgroundColor: "var(--system-red)",
+                flex: "1 1 200px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                opacity: isPending !== null ? 0.6 : 1,
+                cursor: isPending !== null ? "not-allowed" : "pointer"
+              }}
+            >
+              <Zap size={16} /> SHUTDOWN SYSTEM
+            </button>
+
+            {/* Reboot Button */}
+            <button
+              className="btn font-heading"
+              onClick={() => {
+                if (window.confirm("Are you sure you want to REBOOT the host system? The server will restart immediately.")) {
+                  handleSystemOp("reboot");
+                }
+              }}
+              disabled={isPending !== null}
+              style={{
+                backgroundColor: "var(--system-yellow)",
+                flex: "1 1 200px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                opacity: isPending !== null ? 0.6 : 1,
+                cursor: isPending !== null ? "not-allowed" : "pointer"
+              }}
+            >
+              <RefreshCw size={16} className={isPending === "reboot" ? "spin" : ""} /> REBOOT SYSTEM
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
