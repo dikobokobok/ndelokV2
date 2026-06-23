@@ -1,0 +1,17 @@
+{
+  "name": "ndelok-root",
+  "version": "0.23.0",
+  "private": true,
+  "workspaces": ["frontend"],
+  "scripts": {
+    "dev": "concurrently -n frontend,backend -c cyan,green \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "npm run dev -w frontend",
+    "dev:backend": "go run -C ./backend .",
+    "build": "npm run build -w frontend",
+    "start": "npm run start -w frontend",
+    "lint": "npm run lint -w frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3"
+  }
+}

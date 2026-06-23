@@ -1,0 +1,4955 @@
+import { useEffect, useState, useRef, Fragment } from "react";
+import { Activity, Cpu, HardDrive, Network, Package, Terminal, Settings, LayoutDashboard, FileText, Folder, ChevronRight, ArrowUp, Bot, Send, Zap, Server, Shield, RefreshCw, Trash2, Plus, X, Minus, Square } from "lucide-react";
+import { AuthGate } from "./AuthPages";
+import "xterm/css/xterm.css";
+
+const API_HOST = typeof window !== "undefined" ? window.location.hostname : "127.0.0.1";
+const API_PROTOCOL = typeof window !== "undefined" && window.location.protocol === "https:" ? "https" : "http";
+const API = `${API_PROTOCOL}://${API_HOST}:1235`;
+const SESSION_KEY = "ndelok-session";
+
+function getToken(): string {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return "";
+    return JSON.parse(raw).token || "";
+  } catch { return ""; }
+}
+
+function apiFetch(path: string, options?: RequestInit): Promise<Response> {
+  const token = getToken();
+  const h: Record<string, string> = {};
+  if (options?.headers) {
+    const src = options.headers as Record<string, string>;
+    Object.assign(h, src);
+  }
+  if (token) h["Authorization"] = `Bearer ${token}`;
+  return fetch(`${API}${path}`, { ...options, headers: h }).then(res => {
+    if (res.status === 401) {
+      sessionStorage.removeItem(SESSION_KEY);
+      window.location.reload();
+    }
+    return res;
+  });
+}
+
+function apiWs(path: string): WebSocket {
+  const token = getToken();
+  const sep = path.includes("?") ? "&" : "?";
+  const wsProto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
+  return new WebSocket(`${wsProto}://${API_HOST}:1235${path}${sep}token=${encodeURIComponent(token)}`);
+}
+
+export default function App() {
+  const SESSION_DURATION = 3600000;
+  const [theme, setTheme] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("theme") || "light";
+    }
+    return "light";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  const getSession = () => {
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (Date.now() - data.lastActivity > SESSION_DURATION) {
+        sessionStorage.removeItem(SESSION_KEY);
+        return null;
+      }
+      return data;
+    } catch { return null; }
+  };
+
+  const [isLoggedIn, setIsLoggedIn] = useState(() => !!getSession());
+  const [loggedInUser, setLoggedInUser] = useState(() => {
+    const s = getSession();
+    return s ? s.username : "ADMIN";
+  });
+  const [loggedInUserEmail, setLoggedInUserEmail] = useState(() => {
+    const s = getSession();
+    return s ? s.email : "admin@ndelok.me";
+  });
+
+  const doLogin = (username: string, email: string, token?: string) => {
+    const data = { username: username.toUpperCase(), email: email || `${username.toLowerCase()}@ndelok.me`, lastActivity: Date.now(), token: token || "" };
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
+    setLoggedInUser(data.username);
+    setLoggedInUserEmail(data.email);
+    setIsLoggedIn(true);
+  };
+
+  const doLogout = () => {
+    sessionStorage.removeItem(SESSION_KEY);
+    setIsLoggedIn(false);
+  };
+
+  return isLoggedIn ? (
+    <Dashboard loggedInUser={loggedInUser} loggedInUserEmail={loggedInUserEmail} onLogout={doLogout} theme={theme} setTheme={setTheme} />
+  ) : (
+    <AuthGate onLogin={doLogin} />
+  );
+}
+
+const formatNetSpeed = (bytes: number) => {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB/S`;
+  }
+  return `${(bytes / 1024).toFixed(1)} KB/S`;
+};
+
+function Dashboard({ loggedInUser, loggedInUserEmail, onLogout, theme, setTheme }: { loggedInUser: string; loggedInUserEmail: string; onLogout: () => void; theme: string; setTheme: (theme: string) => void }) {
+  const [currentView, setCurrentView] = useState<"Dashboard" | "Plugins" | "Deploy" | "Explorer" | "Logs & Term" | "AI Agent" | "Settings">("Dashboard");
+  const [metrics, setMetrics] = useState({
+    cpu: 0,
+    ram: 0,
+    swap: 0,
+    storage: 0,
+    cpuInfo: "",
+    ramInfo: "",
+    swapInfo: "",
+    storageInfo: "",
+    uptime: "",
+    uptimeNum: 0,
+    network: { up: 0, down: 0 }
+  });
+
+  const [cpuHistory, setCpuHistory] = useState<number[]>(Array(20).fill(0));
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Floating AI Agent States & Handlers
+  const [isAIAgentOpen, setIsAIAgentOpen] = useState(false);
+  const [btnY, setBtnY] = useState(() => {
+    if (typeof window !== "undefined") {
+      return Math.max(400, Math.floor(window.innerHeight * 0.7));
+    }
+    return 600;
+  });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Left click only
+    setIsDragging(true);
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startBtnY = btnY;
+    let hasDragged = false;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasDragged = true;
+      }
+      setDragOffset({ x: dx, y: dy });
+    };
+
+    const handleMouseUp = (upEvent: MouseEvent) => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+      setIsDragging(false);
+      
+      const finalY = startBtnY + (upEvent.clientY - startY);
+      const constrainedY = Math.max(50, Math.min(window.innerHeight - 100, finalY));
+      setBtnY(constrainedY);
+      setDragOffset({ x: 0, y: 0 });
+
+      if (!hasDragged) {
+        setIsAIAgentOpen(prev => !prev);
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setIsDragging(true);
+    const startX = e.touches[0].clientX;
+    const startY = e.touches[0].clientY;
+    const startBtnY = btnY;
+    let hasDragged = false;
+
+    const handleTouchMove = (moveEvent: TouchEvent) => {
+      const dx = moveEvent.touches[0].clientX - startX;
+      const dy = moveEvent.touches[0].clientY - startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasDragged = true;
+      }
+      setDragOffset({ x: dx, y: dy });
+    };
+
+    const handleTouchEnd = (endEvent: TouchEvent) => {
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+      setIsDragging(false);
+      
+      const clientY = endEvent.changedTouches[0].clientY;
+      const finalY = startBtnY + (clientY - startY);
+      const constrainedY = Math.max(50, Math.min(window.innerHeight - 100, finalY));
+      setBtnY(constrainedY);
+      setDragOffset({ x: 0, y: 0 });
+
+      if (!hasDragged) {
+        setIsAIAgentOpen(prev => !prev);
+      }
+    };
+
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleTouchEnd);
+  };
+
+  const SESSION_DURATION = 3600000;
+
+  useEffect(() => {
+    const updateActivity = () => {
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const data = JSON.parse(raw);
+          data.lastActivity = Date.now();
+          sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        }
+      } catch {}
+    };
+    window.addEventListener("mousemove", updateActivity, { passive: true });
+    window.addEventListener("keydown", updateActivity, { passive: true });
+    window.addEventListener("click", updateActivity, { passive: true });
+    window.addEventListener("scroll", updateActivity, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", updateActivity);
+      window.removeEventListener("keydown", updateActivity);
+      window.removeEventListener("click", updateActivity);
+      window.removeEventListener("scroll", updateActivity);
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const check = setInterval(() => {
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (Date.now() - data.lastActivity > SESSION_DURATION) {
+          sessionStorage.removeItem(SESSION_KEY);
+          if (mounted) onLogout();
+        }
+      } catch {}
+    }, 10000);
+    return () => { mounted = false; clearInterval(check); };
+  }, [onLogout]);
+
+  useEffect(() => {
+    if (currentView !== "Dashboard") return;
+
+    let mounted = true;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const poll = async () => {
+      try {
+        const res = await apiFetch(`/api/metrics`);
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        if (!mounted) return;
+
+        const replaceGiB = (str: string) => {
+          if (!str) return "";
+          return str.replace(/GiB/g, "GB").replace(/TiB/g, "TB");
+        };
+
+        setMetrics({
+          cpu: data.cpu,
+          ram: data.ram,
+          swap: data.swap ?? 0,
+          storage: data.storage,
+          cpuInfo: data.cpu_info || "",
+          ramInfo: replaceGiB(data.ram_info || ""),
+          swapInfo: replaceGiB(data.swap_info || ""),
+          storageInfo: replaceGiB(data.storage_info || ""),
+          uptime: data.uptime || "",
+          uptimeNum: data.uptime_num || 0,
+          network: { up: data.network.up, down: data.network.down },
+        });
+        setCpuHistory(prev => [...prev.slice(1), data.cpu]);
+      } catch {
+        // server down — keep showing last values
+      }
+      if (mounted) timer = setTimeout(poll, 1000);
+    };
+
+    poll();
+    return () => { mounted = false; clearTimeout(timer); };
+  }, [currentView]);
+
+  const generatePath = (data: number[], fill = false) => {
+    const width = 500;
+    const height = 120;
+    const padding = 10;
+    const graphWidth = width;
+    const graphHeight = height - padding * 2;
+
+    const points = data.map((val, i) => {
+      const x = (i * graphWidth) / (data.length - 1);
+      const y = height - padding - (val / 100) * graphHeight;
+      return `${x},${y}`;
+    });
+
+    if (points.length === 0) return "";
+
+    if (fill) {
+      return `M 0,${height - padding} L ${points.join(" L ")} L ${width},${height - padding} Z`;
+    }
+    return `M ${points.join(" L ")}`;
+  };
+
+  return (
+    <div className="app-layout" style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+      {/* Mobile hamburger button */}
+      <button
+        className="mobile-menu-btn"
+        onClick={() => setSidebarOpen(prev => !prev)}
+        aria-label="Toggle sidebar"
+        style={{
+          position: "fixed",
+          top: "12px",
+          left: "12px",
+          zIndex: 1001,
+          width: "40px",
+          height: "40px",
+          backgroundColor: "var(--secondary-bg, #FFFDF5)",
+          border: "var(--border-width) solid var(--ink)",
+          boxShadow: "var(--shadow)",
+          display: "none",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          fontSize: "1.2rem",
+          fontWeight: 700,
+        }}
+      >
+        {sidebarOpen ? "✕" : "☰"}
+      </button>
+
+      {/* Mobile overlay */}
+      {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+
+      {/* Sidebar */}
+      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`} style={{ 
+        width: "280px", 
+        flexShrink: 0,
+        height: "100%",
+        borderRight: "var(--border-width) solid var(--ink)",
+        padding: "var(--space-md)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--space-md)",
+        backgroundColor: "var(--secondary-bg)",
+        overflowY: "auto"
+      }}>
+        <div style={{ padding: "var(--space-md) 0", display: "flex", flexDirection: "column", gap: "var(--space-xs)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h1 style={{ fontSize: "2.2rem", letterSpacing: "-0.5px", lineHeight: "1" }}>NDELOK</h1>
+            <button
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="btn"
+              style={{
+                padding: "4px 8px",
+                fontSize: "0.8rem",
+                boxShadow: "2px 2px 0px var(--ink)",
+                backgroundColor: "var(--card-bg)",
+                border: "2px solid var(--ink)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "none",
+                transform: "none"
+              }}
+              title="Toggle Theme"
+            >
+              {theme === "dark" ? "☀" : "🌙"}
+            </button>
+          </div>
+          <div>
+            <p className="badge" style={{ backgroundColor: "var(--system-yellow)" }}>v0.23.0</p>
+          </div>
+        </div>
+        
+        <nav style={{ display: "flex", flexDirection: "column", gap: "var(--space-sm)" }}>
+          <NavItem 
+            icon={<LayoutDashboard size={20} />} 
+            label="Dashboard" 
+            active={currentView === "Dashboard"}
+            onClick={() => setCurrentView("Dashboard")}
+          />
+          <NavItem 
+            icon={<Package size={20} />} 
+            label="Plugins" 
+            active={currentView === "Plugins"}
+            onClick={() => setCurrentView("Plugins")}
+          />
+          <NavItem 
+            icon={<Activity size={20} />} 
+            label="Deploy" 
+            active={currentView === "Deploy"}
+            onClick={() => setCurrentView("Deploy")}
+          />
+          <NavItem 
+            icon={<FileText size={20} />} 
+            label="Explorer" 
+            active={currentView === "Explorer"}
+            onClick={() => setCurrentView("Explorer")}
+          />
+          <NavItem 
+            icon={<Terminal size={20} />} 
+            label="Logs & Term" 
+            active={currentView === "Logs & Term"}
+            onClick={() => setCurrentView("Logs & Term")}
+          />
+          <NavItem 
+            icon={<Settings size={20} />} 
+            label="Settings" 
+            active={currentView === "Settings"}
+            onClick={() => setCurrentView("Settings")}
+          />
+        </nav>
+
+        <div 
+          style={{ marginTop: "auto" }} 
+          className="card"
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ 
+              width: "40px", 
+              height: "40px", 
+              borderRadius: "50%", 
+              backgroundColor: "var(--system-blue)", 
+              border: "2px solid black", 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center",
+              boxShadow: "2px 2px 0px black",
+              fontWeight: "bold",
+              fontSize: "1.1rem"
+            }} className="font-heading">
+              {loggedInUser.charAt(0).toUpperCase()}
+            </div>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden" }}>
+              <p className="font-heading" style={{ fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{loggedInUser}</p>
+              <p className="font-mono" style={{ fontSize: "0.68rem", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{loggedInUserEmail}</p>
+            </div>
+          </div>
+          
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "8px", borderTop: "1.5px solid rgba(0,0,0,0.15)", paddingTop: "8px" }}>
+            <div style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "var(--system-green)", border: "1px solid black", animation: "pulse 2s infinite" }} />
+            <span className="font-mono" style={{ fontSize: "0.62rem", color: "var(--text-muted)" }}>Session Active · local-auth</span>
+          </div>
+
+          <button 
+            className="btn font-heading"
+            onClick={onLogout}
+            style={{
+              backgroundColor: "var(--system-red)",
+              width: "100%",
+              marginTop: "var(--space-sm)",
+              fontSize: "0.8rem",
+              padding: "6px 12px",
+              boxShadow: "2px 2px 0px black",
+              textAlign: "center"
+            }}
+          >
+            LOGOUT
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main style={{ flex: 1, padding: "var(--space-lg)", overflowY: "auto" }}>
+        {currentView === "Dashboard" && (
+          <>
+            <header style={{ marginBottom: "var(--space-lg)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>DASHBOARD</h2>
+              <div className="card" style={{ padding: "var(--space-sm) var(--space-md)", backgroundColor: "var(--card-bg)" }}>
+                <span className="font-mono" style={{ fontSize: "0.85rem", fontWeight: 700 }}>SERVER: PRODUCTION-01</span>
+              </div>
+            </header>
+
+            <div className="metrics-grid">
+              {/* CPU Card */}
+              <MetricCard 
+                title="CPU USAGE" 
+                value={`${metrics.cpu.toFixed(1)}%`} 
+                icon={<Cpu size={32} />} 
+                color="var(--system-yellow)"
+                spec={metrics.cpuInfo}
+              />
+              
+              {/* RAM Card */}
+              <MetricCard 
+                title="RAM USAGE" 
+                value={`${metrics.ram.toFixed(1)}%`} 
+                icon={<Activity size={32} />} 
+                color="var(--system-blue)"
+                spec={metrics.ramInfo}
+              />
+
+              {/* SWAP Card */}
+              <MetricCard 
+                title="SWAP" 
+                value={`${metrics.swap.toFixed(1)}%`} 
+                icon={<Activity size={32} />} 
+                color="var(--system-yellow)"
+                spec={metrics.swapInfo}
+              />
+
+              {/* Storage Card */}
+              <MetricCard 
+                title="STORAGE" 
+                value={`${metrics.storage.toFixed(1)}%`} 
+                icon={<HardDrive size={32} />} 
+                color="var(--system-red)"
+                spec={metrics.storageInfo}
+              />
+
+              {/* Network + Uptime Card */}
+              <div className="card" style={{ backgroundColor: "var(--card-bg)", minHeight: "170px", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "var(--space-md)" }}>
+                  <h3 className="font-heading" style={{ fontSize: "1.1rem" }}>NETWORK SPEED</h3>
+                  <Network size={24} />
+                </div>
+                <div style={{ display: "flex", gap: "var(--space-md)", flex: 1 }}>
+                  <div style={{ flex: 1, width: "50%", minWidth: 0, padding: "var(--space-sm)", border: "2px solid black", backgroundColor: "var(--system-green)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                    <p className="font-heading" style={{ fontSize: "0.7rem", fontWeight: 700 }}>DOWN</p>
+                    <p className="font-display" style={{ fontSize: "1.8rem" }}>{formatNetSpeed(metrics.network.down)}</p>
+                  </div>
+                  <div style={{ flex: 1, width: "50%", minWidth: 0, padding: "var(--space-sm)", border: "2px solid black", backgroundColor: "var(--card-bg)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                    <p className="font-heading" style={{ fontSize: "0.7rem", fontWeight: 700 }}>UP</p>
+                    <p className="font-display" style={{ fontSize: "1.8rem" }}>{formatNetSpeed(metrics.network.up)}</p>
+                  </div>
+                </div>
+                <div style={{ borderTop: "2px solid black", marginTop: "var(--space-sm)", paddingTop: "var(--space-sm)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="font-heading" style={{ fontSize: "0.7rem" }}>UPTIME</span>
+                  <span className="font-mono" style={{ fontSize: "0.85rem", fontWeight: 700 }}>{metrics.uptime || "..."}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* CPU Load History Line Chart */}
+            <div className="card" style={{ backgroundColor: "var(--card-bg)", marginTop: "var(--space-lg)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-md)" }}>
+                <div>
+                  <h3 className="font-heading" style={{ fontSize: "1.1rem" }}>CPU LOAD HISTORY</h3>
+                  <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Real-time 20-second CPU core load history</p>
+                </div>
+                <div style={{ display: "flex", gap: "var(--space-md)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-xs)" }}>
+                    <span style={{ display: "inline-block", width: "12px", height: "12px", backgroundColor: "var(--system-yellow)", border: "1.5px solid black" }}></span>
+                    <span className="font-heading" style={{ fontSize: "0.75rem" }}>CPU USAGE (CURRENT: {metrics.cpu.toFixed(1)}%)</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-xs)" }}>
+                    <span className="font-heading" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>MAX: {Math.max(...cpuHistory)}%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ border: "2px solid black", padding: 0, backgroundColor: "var(--secondary-bg)", position: "relative", overflow: "hidden" }}>
+                <svg viewBox="0 0 500 120" preserveAspectRatio="none" style={{ width: "100%", height: "140px", display: "block" }}>
+                  {/* Horizontal Grid lines */}
+                  <line x1="0" y1="10" x2="500" y2="10" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                  <line x1="0" y1="35" x2="500" y2="35" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                  <line x1="0" y1="60" x2="500" y2="60" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                  <line x1="0" y1="85" x2="500" y2="85" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+                  <line x1="0" y1="110" x2="500" y2="110" stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3,3" />
+
+                  {/* Vertical Grid lines */}
+                  {Array.from({ length: 9 }).map((_, i) => {
+                    const x = (i + 1) * 50;
+                    return (
+                      <line key={i} x1={x} y1="0" x2={x} y2="120" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="2,2" />
+                    );
+                  })}
+
+                  {/* CPU Fill Area */}
+                  <path
+                    d={generatePath(cpuHistory, true)}
+                    fill="var(--system-yellow)"
+                    fillOpacity="0.4"
+                  />
+
+                  {/* CPU Yellow Background Outline Line */}
+                  <path
+                    d={generatePath(cpuHistory, false)}
+                    fill="none"
+                    stroke="var(--system-yellow)"
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  {/* CPU Thin Black Outline on top for contrast */}
+                  <path
+                    d={generatePath(cpuHistory, false)}
+                    fill="none"
+                    stroke="black"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+
+                {/* Exposed Y-Axis Labels */}
+                <div style={{ position: "absolute", top: "12px", left: "16px", pointerEvents: "none" }} className="font-mono">
+                  <span style={{ fontSize: "0.65rem", padding: "2px 4px", border: "1px solid black", backgroundColor: "var(--card-bg)", boxShadow: "1px 1px 0px black" }}>
+                    100%
+                  </span>
+                </div>
+                <div style={{ position: "absolute", bottom: "12px", left: "16px", pointerEvents: "none" }} className="font-mono">
+                  <span style={{ fontSize: "0.65rem", padding: "2px 4px", border: "1px solid black", backgroundColor: "var(--card-bg)", boxShadow: "1px 1px 0px black" }}>
+                    0%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* System Status Table Mock */}
+            <section style={{ marginTop: "var(--space-xl)" }}>
+              <h3 className="font-heading" style={{ marginBottom: "var(--space-md)", fontSize: "1.6rem" }}>RECENT LOGS</h3>
+              <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead style={{ backgroundColor: "var(--secondary-bg)", borderBottom: "var(--border-width) solid var(--ink)" }} className="font-heading">
+                    <tr>
+                      <th style={{ ...tableHeaderStyle, fontSize: "0.85rem" }}>TIMESTAMP</th>
+                      <th style={{ ...tableHeaderStyle, fontSize: "0.85rem" }}>LEVEL</th>
+                      <th style={{ ...tableHeaderStyle, fontSize: "0.85rem" }}>MESSAGE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <LogRow time="22:30:01" level="INFO" msg="System check completed." />
+                    <LogRow time="22:30:05" level="WARN" msg="CPU usage spike detected." />
+                    <LogRow time="22:30:12" level="INFO" msg="Network connection stable." />
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </>
+        )}
+        {currentView === "Plugins" && <PluginsView />}
+        {currentView === "Deploy" && <DeployView />}
+        {currentView === "Explorer" && <ExplorerView />}
+        {currentView === "Logs & Term" && <LogsTermView />}
+        {currentView !== "Dashboard" && currentView !== "Plugins" && currentView !== "Deploy" && currentView !== "Explorer" && currentView !== "Logs & Term" && currentView !== "AI Agent" && (
+          <div>
+            <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>{currentView.toUpperCase()}</h2>
+            <p className="font-mono" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "var(--space-md)" }}>
+              Under construction. Coming soon.
+            </p>
+          </div>
+        )}
+      </main>
+
+      {/* Floating AI Agent Toggle Button */}
+      <div
+        onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
+        className="floating-agent-btn"
+        style={{
+          position: "fixed",
+          right: "16px",
+          top: `${btnY}px`,
+          width: "56px",
+          height: "56px",
+          transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`,
+          transition: isDragging ? "none" : "transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), top 0.1s",
+          cursor: isDragging ? "grabbing" : "grab",
+          zIndex: 9999,
+          backgroundColor: "var(--card-bg)",
+          border: "3px solid black",
+          borderRadius: "50%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "-4px 4px 0px black",
+          userSelect: "none"
+        }}
+      >
+        <Bot size={24} />
+      </div>
+
+      {/* Floating AI Agent Popup Console */}
+      <AIAgentPopup isOpen={isAIAgentOpen} onClose={() => setIsAIAgentOpen(false)} btnY={btnY} />
+    </div>
+  );
+}
+
+function MetricCard({ title, value, icon, color, spec }: any) {
+  return (
+    <div className="card" style={{ backgroundColor: color, position: "relative", minHeight: "170px", height: "100%" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "var(--space-md)" }}>
+        <h3 className="font-heading" style={{ fontSize: "1.1rem", maxWidth: "150px" }}>{title}</h3>
+        {icon}
+      </div>
+      <p className="font-display" style={{ fontSize: "4.5rem", lineHeight: 0.95 }}>{value}</p>
+      {spec && (
+        <div 
+          className="font-mono"
+          style={{ 
+            position: "absolute",
+            bottom: "12px",
+            right: "12px",
+            backgroundColor: "var(--card-bg)", 
+            border: "2px solid #000000", 
+            padding: "2px 8px", 
+            fontSize: "0.72rem", 
+            fontWeight: 700,
+            color: "var(--text)",
+            boxShadow: "2px 2px 0px #000000",
+            maxWidth: "calc(100% - 24px)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap"
+          }}
+          title={spec}
+        >
+          {spec}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NavItem({ icon, label, active = false, onClick }: any) {
+  return (
+    <div 
+      className="font-heading"
+      onClick={onClick}
+      style={{ 
+        display: "flex", 
+        alignItems: "center", 
+        gap: "var(--space-md)", 
+        padding: "var(--space-sm) var(--space-md)",
+        border: active ? "var(--border-width) solid var(--ink)" : "none",
+        backgroundColor: active ? "var(--card-bg)" : "transparent",
+        boxShadow: active ? "var(--shadow-active)" : "none",
+        fontWeight: 700,
+        cursor: "pointer",
+        fontSize: "0.95rem",
+        transition: "all 0.1s"
+      }}
+    >
+      {icon}
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function LogRow({ time, level, msg }: any) {
+  return (
+    <tr style={{ borderBottom: "1px solid black" }} className="font-mono">
+      <td style={tableCellStyle}>{time}</td>
+      <td style={tableCellStyle}>
+        <span className="badge" style={{ 
+          backgroundColor: level === "WARN" ? "var(--system-yellow)" : "var(--system-green)" 
+        }}>{level}</span>
+      </td>
+      <td style={tableCellStyle}>{msg}</td>
+    </tr>
+  );
+}
+
+const tableHeaderStyle = {
+  textAlign: "left" as const,
+  padding: "var(--space-md)",
+  fontSize: "0.85rem"
+};
+
+const tableCellStyle = {
+  padding: "var(--space-md)",
+  fontSize: "0.9rem"
+};
+
+function PluginsView() {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activeFilter, setActiveFilter] = useState<"ALL" | "INSTALLED">("ALL");
+
+  // Installed & Status states for interactive behavior
+  const [installedPlugins, setInstalledPlugins] = useState<Record<string, boolean>>({
+    zerotier: false,
+    tmux: false
+  });
+
+  const [pluginStatuses, setPluginStatuses] = useState<Record<string, string>>({
+    zerotier: "CHECKING...",
+    tmux: "CHECKING..."
+  });
+
+  const [zerotierIp, setZerotierIp] = useState("");
+  const [zerotierIface, setZerotierIface] = useState("");
+  useEffect(() => {
+    let mounted = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = () => {
+      apiFetch("/api/plugins/zerotier/status")
+        .then(res => res.json())
+        .then(data => {
+          if (!mounted) return;
+          setInstalledPlugins(prev => ({ ...prev, zerotier: data.installed }));
+          setPluginStatuses(prev => ({ ...prev, zerotier: data.status }));
+          if (data.networkId) setCurrentZerotierId(data.networkId);
+          setZerotierIp(data.ipAddress);
+          setZerotierIface(data.interface);
+          timer = setTimeout(poll, 5000);
+        })
+        .catch(() => {
+          if (!mounted) return;
+          setPluginStatuses(prev => ({ ...prev, zerotier: "OFFLINE" }));
+          timer = setTimeout(poll, 10000);
+        });
+    };
+    poll();
+    return () => { mounted = false; clearTimeout(timer); };
+  }, []);
+
+  // ───────── TMUX state ─────────
+  interface TmuxSession {
+    name: string;
+    created: string;
+    attached: number;
+    windows: number;
+  }
+  const [tmuxSessions, setTmuxSessions] = useState<TmuxSession[]>([]);
+  const [isTmuxSessionListOpen, setIsTmuxSessionListOpen] = useState(false);
+  const [isTmuxNewSessionOpen, setIsTmuxNewSessionOpen] = useState(false);
+  const [isTmuxTerminalOpen, setIsTmuxTerminalOpen] = useState(false);
+  const [tmuxNewSessionName, setTmuxNewSessionName] = useState("");
+  const [tmuxSelectedSession, setTmuxSelectedSession] = useState("");
+  const [isTmuxMinimized, setIsTmuxMinimized] = useState(false);
+  const [isTmuxMaximized, setIsTmuxMaximized] = useState(false);
+
+  const tmuxCloseBtnStyle = {
+    width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#fecaca",
+    cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold" as const,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    padding: 0, boxShadow: "1px 1px 0px black"
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = () => {
+      apiFetch("/api/plugins/tmux/status")
+        .then(res => res.json())
+        .then(data => {
+          if (!mounted) return;
+          setInstalledPlugins(prev => ({ ...prev, tmux: data.installed }));
+          setPluginStatuses(prev => ({ ...prev, tmux: data.status }));
+          setTmuxSessions(data.sessions || []);
+          timer = setTimeout(poll, 5000);
+        })
+        .catch(() => {
+          if (!mounted) return;
+          setPluginStatuses(prev => ({ ...prev, tmux: "OFFLINE" }));
+          timer = setTimeout(poll, 10000);
+        });
+    };
+    poll();
+    return () => { mounted = false; clearTimeout(timer); };
+  }, []);
+
+  // Modal & Configuration States
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [selectedPlugin, setSelectedPlugin] = useState<any>(null);
+  const [zerotierIdInput, setZerotierIdInput] = useState("");
+  const [currentZerotierId, setCurrentZerotierId] = useState("");
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  const pluginsData = [
+    {
+      id: "zerotier",
+      name: "ZEROTIER ONE",
+      tagline: "Secure Virtual Network & Overlay P2P",
+      description: "Creates virtual networks, bridging server workloads peer-to-peer over an encrypted overlay network. Ideal for secure multi-cloud or remote management.",
+      color: "var(--system-blue)",
+      status: pluginStatuses.zerotier,
+      badgeText: "v1.12.2",
+      installed: installedPlugins.zerotier,
+      details: [
+        { label: "NETWORK ID", value: currentZerotierId || "N/A" },
+        { label: "IP ADDRESS", value: zerotierIp || "N/A" },
+        { label: "INTERFACE", value: zerotierIface || "N/A" }
+      ],
+      actions: installedPlugins.zerotier 
+        ? [pluginStatuses.zerotier === "RUNNING" ? "DISABLE" : "ENABLE", "DELETE", "CONFIGURE"]
+        : ["INSTALL"]
+    },
+    {
+      id: "tmux",
+      name: "TMUX MULTIPLEXER",
+      tagline: "Workspace Manager & Session Persistence",
+      description: "Terminal session persistence and shell multiplexing. Keeps long-running CLI builds and scripts active in the background when ssh detaches.",
+      color: "var(--system-yellow)",
+      status: pluginStatuses.tmux,
+      badgeText: "v3.3a",
+      installed: installedPlugins.tmux,
+      details: [
+        { label: "ACTIVE SESSIONS", value: pluginStatuses.tmux === "RUNNING" ? `${tmuxSessions.length} Session${tmuxSessions.length !== 1 ? "s" : ""}` : "0 Sessions" },
+        { label: "DEFAULT SHELL", value: "/bin/zsh" },
+        { label: "CPU IMPACT", value: pluginStatuses.tmux === "RUNNING" ? "0.2% Load" : "0.0% Load" }
+      ],
+      actions: !installedPlugins.tmux
+        ? ["INSTALL"]
+        : pluginStatuses.tmux === "RUNNING"
+          ? ["ATTACH", "REFRESH"]
+          : ["NEW"]
+    },
+
+  ];
+
+  const filteredPlugins = pluginsData.filter(plugin => {
+    const matchesSearch = plugin.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          plugin.tagline.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          plugin.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesFilter = activeFilter === "ALL" || (activeFilter === "INSTALLED" && plugin.installed);
+    return matchesSearch && matchesFilter;
+  });
+
+  return (
+    <div>
+      {/* Header */}
+      <header style={{ marginBottom: "var(--space-lg)", display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: "var(--space-md)" }}>
+        <div>
+          <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>PLUGINS</h2>
+          <p className="font-mono" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "var(--space-xs)" }}>
+            Extend server capabilities with Neobrutalist modules.
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: "var(--space-sm)", flexWrap: "wrap" }}>
+          {/* Search Input */}
+          <input 
+            type="text" 
+            placeholder="SEARCH PLUGINS..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="font-mono"
+            style={{
+              border: "3px solid black",
+              padding: "6px 12px",
+              outline: "none",
+              boxShadow: "3px 3px 0px black",
+              fontSize: "0.85rem",
+              fontWeight: 700,
+              width: "200px"
+            }}
+          />
+          {/* Filter Buttons */}
+          <button 
+            className="btn" 
+            onClick={() => setActiveFilter("ALL")}
+            style={{ 
+              backgroundColor: activeFilter === "ALL" ? "var(--system-yellow)" : "var(--card-bg)",
+              fontSize: "0.8rem",
+              padding: "6px 12px",
+              boxShadow: "3px 3px 0px black"
+            }}
+          >
+            ALL
+          </button>
+          <button 
+            className="btn" 
+            onClick={() => setActiveFilter("INSTALLED")}
+            style={{ 
+              backgroundColor: activeFilter === "INSTALLED" ? "var(--system-yellow)" : "var(--card-bg)",
+              fontSize: "0.8rem",
+              padding: "6px 12px",
+              boxShadow: "3px 3px 0px black"
+            }}
+          >
+            INSTALLED
+          </button>
+        </div>
+      </header>
+
+      {/* Plugins Grid */}
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+        gap: "var(--space-md)",
+        marginTop: "var(--space-lg)"
+      }}>
+        {filteredPlugins.map(plugin => (
+          <div key={plugin.id} className="card" style={{ 
+            backgroundColor: "var(--card-bg)", 
+            padding: 0, 
+            display: "flex", 
+            flexDirection: "column",
+            minHeight: "230px",
+            overflow: "hidden"
+          }}>
+            {/* Header colored banner */}
+            <div style={{ 
+              backgroundColor: plugin.color, 
+              borderBottom: "3px solid black", 
+              padding: "6px var(--space-sm)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center"
+            }}>
+              <div>
+                <h3 className="font-heading" style={{ fontSize: "0.95rem", color: "black" }}>{plugin.name}</h3>
+                <span className="badge" style={{ backgroundColor: "var(--card-bg)", marginTop: "1px", fontSize: "0.55rem", padding: "0px 3px" }}>
+                  {plugin.badgeText}
+                </span>
+              </div>
+              <span className="badge" style={{ 
+                backgroundColor: "black", 
+                color: plugin.color, 
+                borderColor: "black",
+                fontSize: "0.6rem",
+                padding: "0px 3px"
+              }}>
+                {plugin.status}
+              </span>
+            </div>
+
+            {/* Description Body */}
+            <div style={{ padding: "var(--space-sm)", flex: 1, display: "flex", flexDirection: "column" }}>
+              <p className="font-heading" style={{ fontSize: "0.75rem", marginBottom: "2px" }}>{plugin.tagline}</p>
+              <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", lineHeight: 1.2, marginBottom: "var(--space-xs)" }}>{plugin.description}</p>
+              
+              {/* Exposed Info Grid */}
+              <div style={{ 
+                border: "2px solid black", 
+                backgroundColor: "var(--secondary-bg)", 
+                padding: "4px 6px", 
+                display: "flex", 
+                flexDirection: "column",
+                gap: "1px",
+                marginTop: "auto"
+              }} className="font-mono">
+                {plugin.details.map((detail, idx) => (
+                  <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
+                    <span style={{ fontWeight: 700 }}>{detail.label}:</span>
+                    <span>{detail.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions Footer */}
+            <div style={{ 
+              borderTop: "3px solid black", 
+              padding: "4px 8px", 
+              backgroundColor: "var(--secondary-bg)",
+              display: "flex",
+              gap: "var(--space-sm)",
+              justifyContent: "flex-end"
+            }}>
+              {plugin.actions.map((action, idx) => {
+                const isZerotier = plugin.id === "zerotier";
+                const ztRunning = pluginStatuses.zerotier === "RUNNING";
+                const ztStopped = pluginStatuses.zerotier === "STOPPED";
+                const hasNetId = currentZerotierId && currentZerotierId !== "N/A";
+                const isDisabled = isZerotier && (
+                  (action === "ENABLE" && (!hasNetId || ztRunning)) ||
+                  (action === "DISABLE" && (!hasNetId || ztStopped)) ||
+                  (action === "DELETE" && !hasNetId)
+                );
+                let bgColor = "var(--card-bg)";
+                if (action === "ENABLE") bgColor = "var(--system-green)";
+                else if (action === "DISABLE") bgColor = "var(--system-yellow)";
+                else if (action === "DELETE") bgColor = "var(--system-red)";
+                return (
+                <button
+                  key={idx}
+                  className="btn"
+                  disabled={isDisabled}
+                  onClick={() => {
+                    if (action === "CONFIGURE" && isZerotier) {
+                      setSelectedPlugin(plugin);
+                      setZerotierIdInput(hasNetId ? currentZerotierId : "");
+                      setIsConfigOpen(true);
+                      setIsMinimized(false);
+                      setIsMaximized(false);
+                    } else if (action === "INSTALL" && isZerotier) {
+                      setPluginStatuses(prev => ({ ...prev, zerotier: "INSTALLING..." }));
+                      apiFetch("/api/plugins/zerotier/install", { method: "POST" })
+                        .then(() => {
+                          const poll = setInterval(() => {
+                            apiFetch("/api/plugins/zerotier/status")
+                              .then(res => res.json())
+                              .then(data => {
+                                if (data.installed) {
+                                  clearInterval(poll);
+                                  setInstalledPlugins(prev => ({ ...prev, zerotier: true }));
+                                  setPluginStatuses(prev => ({ ...prev, zerotier: data.status }));
+                                }
+                              })
+                              .catch(() => {});
+                          }, 3000);
+                        })
+                        .catch(() => {
+                          setPluginStatuses(prev => ({ ...prev, zerotier: "ERROR" }));
+                        });
+                    } else if (action === "INSTALL" && plugin.id === "tmux") {
+                      setPluginStatuses(prev => ({ ...prev, tmux: "INSTALLING..." }));
+                      apiFetch("/api/plugins/tmux/install", { method: "POST" })
+                        .then(res => res.json())
+                        .then(data => {
+                          if (data.success) {
+                            const poll = setInterval(() => {
+                              apiFetch("/api/plugins/tmux/status")
+                                .then(res => res.json())
+                                .then(d => {
+                                  if (d.installed) {
+                                    clearInterval(poll);
+                                    setInstalledPlugins(prev => ({ ...prev, tmux: true }));
+                                    setPluginStatuses(prev => ({ ...prev, tmux: d.status }));
+                                    setTmuxSessions(d.sessions || []);
+                                  }
+                                })
+                                .catch(() => {});
+                            }, 3000);
+                          }
+                        })
+                        .catch(() => setPluginStatuses(prev => ({ ...prev, tmux: "ERROR" })));
+                    } else if (action === "NEW" && plugin.id === "tmux") {
+                      setTmuxNewSessionName("");
+                      setIsTmuxNewSessionOpen(true);
+                    } else if (action === "ATTACH" && plugin.id === "tmux") {
+                      setIsTmuxSessionListOpen(true);
+                    } else if (action === "REFRESH" && plugin.id === "tmux") {
+                      setPluginStatuses(prev => ({ ...prev, tmux: "REFRESHING" }));
+                      apiFetch("/api/plugins/tmux/status")
+                        .then(res => res.json())
+                        .then(data => {
+                          setInstalledPlugins(prev => ({ ...prev, tmux: data.installed }));
+                          setPluginStatuses(prev => ({ ...prev, tmux: data.status }));
+                          setTmuxSessions(data.sessions || []);
+                        })
+                        .catch(() => setPluginStatuses(prev => ({ ...prev, tmux: "OFFLINE" })));
+                    } else if (action === "ENABLE" && plugin.id === "zerotier") {
+                      setPluginStatuses(prev => ({ ...prev, zerotier: "ENABLING..." }));
+                      apiFetch("/api/plugins/zerotier/service", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "start" })
+                      })
+                        .then(res => res.json())
+                        .then(data => {
+                          if (data.success) {
+                            setPluginStatuses(prev => ({ ...prev, zerotier: "RUNNING" }));
+                          } else {
+                            setPluginStatuses(prev => ({ ...prev, zerotier: "ERROR" }));
+                          }
+                        })
+                        .catch(() => setPluginStatuses(prev => ({ ...prev, zerotier: "OFFLINE" })));
+                    } else if (action === "DISABLE" && plugin.id === "zerotier") {
+                      setPluginStatuses(prev => ({ ...prev, zerotier: "DISABLING..." }));
+                      apiFetch("/api/plugins/zerotier/service", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "stop" })
+                      })
+                        .then(res => res.json())
+                        .then(data => {
+                          if (data.success) {
+                            setPluginStatuses(prev => ({ ...prev, zerotier: "STOPPED" }));
+                          } else {
+                            setPluginStatuses(prev => ({ ...prev, zerotier: "ERROR" }));
+                          }
+                        })
+                        .catch(() => setPluginStatuses(prev => ({ ...prev, zerotier: "OFFLINE" })));
+                    } else if (action === "DELETE" && plugin.id === "zerotier") {
+                      const networkId = currentZerotierId;
+                      if (!networkId || networkId === "N/A") {
+                        alert("No network to leave");
+                        return;
+                      }
+                      apiFetch("/api/plugins/zerotier/leave", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ networkId })
+                      })
+                        .then(res => res.json())
+                        .then(data => {
+                          if (data.success) {
+                            setCurrentZerotierId("");
+                            setZerotierIp("");
+                            setZerotierIface("");
+                            setPluginStatuses(prev => ({ ...prev, zerotier: "STOPPED" }));
+                          } else {
+                            alert("Failed to leave: " + data.message);
+                          }
+                        })
+                        .catch(() => alert("Failed to connect to server"));
+                    } else {
+                      alert(`Action "${action}" triggered for ${plugin.name}`);
+                    }
+                  }}
+                  style={{
+                    padding: "2px 6px",
+                    fontSize: "0.65rem",
+                    boxShadow: "1.5px 1.5px 0px black",
+                    backgroundColor: isDisabled ? "#e2e8f0" : bgColor,
+                    color: isDisabled ? "#94a3b8" : "black",
+                    cursor: isDisabled ? "not-allowed" : "pointer",
+                    opacity: isDisabled ? 0.5 : 1
+                  }}
+                >
+                  {action}
+                </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Configure Modal Popup */}
+      {isConfigOpen && selectedPlugin && (
+        <>
+          {/* Overlay background blur */}
+          {!isMinimized && !isMaximized && (
+            <div 
+              onClick={() => setIsConfigOpen(false)}
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0, 0, 0, 0.4)",
+                backdropFilter: "blur(2px)",
+                zIndex: 999
+              }}
+            />
+          )}
+
+          {/* Modal Container */}
+          <div 
+            style={
+              isMaximized 
+                ? {
+                    position: "fixed",
+                    top: "var(--space-md)",
+                    left: "var(--space-md)",
+                    right: "var(--space-md)",
+                    bottom: "var(--space-md)",
+                    backgroundColor: "white",
+                    border: "3px solid black",
+                    boxShadow: "8px 8px 0px black",
+                    zIndex: 1000,
+                    display: "flex",
+                    flexDirection: "column",
+                    transition: "all 0.15s ease-out"
+                  }
+                : isMinimized 
+                  ? {
+                      position: "fixed",
+                      bottom: "20px",
+                      right: "20px",
+                      width: "320px",
+                      backgroundColor: "var(--card-bg)",
+                      border: "3px solid black",
+                      boxShadow: "4px 4px 0px black",
+                      zIndex: 1000,
+                      display: "flex",
+                      flexDirection: "column",
+                      transition: "all 0.15s ease-out"
+                    }
+                  : {
+                      position: "fixed",
+                      top: "50%",
+                      left: "50%",
+                      transform: "translate(-50%, -50%)",
+                      width: "420px",
+                      maxWidth: "90%",
+                      backgroundColor: "var(--card-bg)",
+                      border: "3px solid black",
+                      boxShadow: "8px 8px 0px black",
+                      zIndex: 1000,
+                      display: "flex",
+                      flexDirection: "column",
+                      transition: "all 0.15s ease-out"
+                    }
+            }
+          >
+            {/* Title Bar */}
+            <div style={{
+              backgroundColor: selectedPlugin.color,
+              borderBottom: "3px solid black",
+              padding: "8px 12px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              cursor: "default"
+            }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "var(--bg)", border: "1.5px solid black", borderRadius: "50%" }}></span>
+                CONFIGURE: {selectedPlugin.name}
+              </span>
+              
+              {/* Window Controls */}
+              <div style={{ display: "flex", gap: "6px" }}>
+                {/* Minimize Button */}
+                <button 
+                  onClick={() => setIsMinimized(!isMinimized)}
+                  title="Minimize"
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    border: "1.5px solid black",
+                    backgroundColor: "#fef08a",
+                    cursor: "pointer",
+                    fontSize: "0.8rem",
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                    boxShadow: "1px 1px 0px black"
+                  }}
+                >
+                  –
+                </button>
+                {/* Maximize Button */}
+                <button 
+                  onClick={() => {
+                    setIsMaximized(!isMaximized);
+                    setIsMinimized(false);
+                  }}
+                  title={isMaximized ? "Restore Down" : "Maximize"}
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    border: "1.5px solid black",
+                    backgroundColor: "#bbf7d0",
+                    cursor: "pointer",
+                    fontSize: "0.7rem",
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                    boxShadow: "1px 1px 0px black"
+                  }}
+                >
+                  {isMaximized ? "❐" : "⬜"}
+                </button>
+                {/* Close Button */}
+                <button 
+                  onClick={() => setIsConfigOpen(false)}
+                  title="Close"
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    border: "1.5px solid black",
+                    backgroundColor: "#fecaca",
+                    cursor: "pointer",
+                    fontSize: "0.7rem",
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                    boxShadow: "1px 1px 0px black"
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Window Content */}
+            {!isMinimized && (
+              <div style={{ padding: "var(--space-md)", flex: 1, display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+                <div>
+                  <h4 className="font-heading" style={{ fontSize: "0.85rem", marginBottom: "4px" }}>
+                    ZEROTIER NETWORK CONFIGURATION
+                  </h4>
+                  <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", lineHeight: 1.3 }}>
+                    Please enter the 16-character hexadecimal Network ID for Zerotier One to establish connection bridges.
+                  </p>
+                </div>
+
+                {/* Input Field */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>
+                    NETWORK ID:
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g. 8056c85e45c71a39" 
+                    value={zerotierIdInput}
+                    onChange={(e) => setZerotierIdInput(e.target.value.substring(0, 16))}
+                    className="font-mono"
+                    style={{
+                      border: "3px solid black",
+                      padding: "8px 12px",
+                      outline: "none",
+                      boxShadow: "4px 4px 0px black",
+                      fontSize: "0.85rem",
+                      fontWeight: 700,
+                      backgroundColor: "#f8fafc"
+                    }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px" }}>
+                    <span className="font-mono" style={{ fontSize: "0.6rem", color: "#64748b" }}>
+                      Length: {zerotierIdInput.length}/16
+                    </span>
+                    {zerotierIdInput.length !== 16 && (
+                      <span className="font-mono" style={{ fontSize: "0.6rem", color: "red", fontWeight: 700 }}>
+                        Must be exactly 16 chars
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Service Control */}
+                <div style={{ borderTop: "2px solid black", paddingTop: "var(--space-sm)" }}>
+                  <h5 className="font-heading" style={{ fontSize: "0.75rem", marginBottom: "6px" }}>
+                    SERVICE CONTROL
+                  </h5>
+                  <div style={{ display: "flex", gap: "var(--space-sm)" }}>
+                    {(() => {
+                      const ztRunning = pluginStatuses.zerotier === "RUNNING";
+                      const hasNetId = currentZerotierId && currentZerotierId !== "N/A";
+                      const isToggleDisabled = !hasNetId;
+                      const toggleAction = ztRunning ? "stop" : "start";
+                      const toggleLabel = ztRunning ? "DISABLE" : "ENABLE";
+                      const toggleColor = isToggleDisabled ? "#e2e8f0" : ztRunning ? "var(--system-yellow)" : "var(--system-green)";
+                      const deleteDisabled = !hasNetId;
+                      return (<>
+                    <button
+                      className="btn"
+                      disabled={isToggleDisabled}
+                      onClick={() => {
+                        apiFetch("/api/plugins/zerotier/service", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ action: toggleAction })
+                        })
+                          .then(res => res.json())
+                          .then(data => {
+                            if (data.success) {
+                              setPluginStatuses(prev => ({ ...prev, zerotier: ztRunning ? "STOPPED" : "RUNNING" }));
+                            } else {
+                              alert("Failed: " + data.message);
+                            }
+                          })
+                          .catch(() => alert("Failed to connect to server"));
+                      }}
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: "0.7rem",
+                        backgroundColor: toggleColor,
+                        cursor: isToggleDisabled ? "not-allowed" : "pointer",
+                        opacity: isToggleDisabled ? 0.5 : 1,
+                        boxShadow: "2px 2px 0px black"
+                      }}
+                    >
+                      {toggleLabel}
+                    </button>
+                    <button
+                      className="btn"
+                      disabled={deleteDisabled}
+                      onClick={() => {
+                        const networkId = currentZerotierId;
+                        if (!networkId || networkId === "N/A") {
+                          alert("No network to leave");
+                          return;
+                        }
+                        apiFetch("/api/plugins/zerotier/leave", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ networkId })
+                        })
+                          .then(res => res.json())
+                          .then(data => {
+                            if (data.success) {
+                              setCurrentZerotierId("");
+                              setZerotierIp("");
+                              setZerotierIface("");
+                              setPluginStatuses(prev => ({ ...prev, zerotier: "STOPPED" }));
+                            } else {
+                              alert("Failed: " + data.message);
+                            }
+                          })
+                          .catch(() => alert("Failed to connect to server"));
+                      }}
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: "0.7rem",
+                        backgroundColor: deleteDisabled ? "#e2e8f0" : "var(--system-red)",
+                        cursor: deleteDisabled ? "not-allowed" : "pointer",
+                        opacity: deleteDisabled ? 0.5 : 1,
+                        boxShadow: "2px 2px 0px black"
+                      }}
+                    >
+                      DELETE
+                    </button>
+                    </>);
+                    })()}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "auto", paddingTop: "var(--space-sm)" }}>
+                  <button 
+                    className="btn" 
+                    onClick={() => setIsConfigOpen(false)}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: "0.75rem",
+                      backgroundColor: "var(--card-bg)",
+                      boxShadow: "3px 3px 0px black"
+                    }}
+                  >
+                    CANCEL
+                  </button>
+                  <button 
+                    className="btn" 
+                    disabled={zerotierIdInput.length !== 16}
+                    onClick={() => {
+                      if (zerotierIdInput.length === 16) {
+                        apiFetch("/api/plugins/zerotier/join", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ networkId: zerotierIdInput })
+                        })
+                          .then(res => res.json())
+                          .then(data => {
+                            if (data.success) {
+                              setCurrentZerotierId(zerotierIdInput);
+                              setPluginStatuses(prev => ({ ...prev, zerotier: "RUNNING" }));
+                              setZerotierIp("JOINING...");
+                              setZerotierIface("PENDING...");
+                              setIsConfigOpen(false);
+                            } else {
+                              alert("Failed to join: " + data.message);
+                            }
+                          })
+                          .catch(() => alert("Failed to connect to server"));
+                      }
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: "0.75rem",
+                      backgroundColor: zerotierIdInput.length === 16 ? "var(--system-green)" : "#e2e8f0",
+                      cursor: zerotierIdInput.length === 16 ? "pointer" : "not-allowed",
+                      boxShadow: "3px 3px 0px black",
+                      opacity: zerotierIdInput.length === 16 ? 1 : 0.6
+                    }}
+                  >
+                    SAVE & JOIN
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ───────── TMUX Session List Modal ───────── */}
+      {isTmuxSessionListOpen && (
+        <>
+          <div
+            onClick={() => setIsTmuxSessionListOpen(false)}
+            style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)", zIndex: 999 }}
+          />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+            width: "440px", maxWidth: "90%", backgroundColor: "white",
+            border: "3px solid black", boxShadow: "8px 8px 0px black", zIndex: 1000,
+            display: "flex", flexDirection: "column"
+          }}>
+            <div style={{
+              backgroundColor: "var(--system-yellow)", borderBottom: "3px solid black",
+              padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center"
+            }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Terminal size={16} />
+                TMUX SESSIONS
+              </span>
+              <button onClick={() => setIsTmuxSessionListOpen(false)} style={tmuxCloseBtnStyle}>✕</button>
+            </div>
+            <div style={{ padding: "var(--space-md)", maxHeight: "300px", overflowY: "auto" }}>
+              {tmuxSessions.length === 0 ? (
+                <p className="font-mono" style={{ fontSize: "0.75rem", color: "#64748b", textAlign: "center", padding: "20px 0" }}>
+                  No active sessions
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {tmuxSessions.map((s, i) => (
+                    <div key={i} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      border: "2px solid black", padding: "8px 10px", backgroundColor: "#f8fafc",
+                      cursor: "pointer"
+                    }}
+                      onClick={() => {
+                        setTmuxSelectedSession(s.name);
+                        setIsTmuxTerminalOpen(true);
+                      }}
+                    >
+                      <div>
+                        <span className="font-heading" style={{ fontSize: "0.85rem" }}>{s.name}</span>
+                        <span className="font-mono" style={{ fontSize: "0.6rem", color: "#64748b", marginLeft: "8px" }}>
+                          {s.windows} win · {s.attached} attached
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          apiFetch("/api/plugins/tmux/session", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ name: s.name })
+                          })
+                            .then(res => res.json())
+                            .then(data => {
+                              if (!data.success) {
+                                alert("Failed: " + data.message);
+                                return;
+                              }
+                              return apiFetch("/api/plugins/tmux/status");
+                            })
+                            .then(res => res && res.json())
+                            .then(data => {
+                              if (data) {
+                                setTmuxSessions(data.sessions || []);
+                                setPluginStatuses(prev => ({ ...prev, tmux: data.status }));
+                              }
+                            })
+                            .catch(() => alert("Failed to connect to server"));
+                        }}
+                        style={{
+                          border: "1.5px solid black", backgroundColor: "var(--system-red)",
+                          color: "black", cursor: "pointer", fontSize: "0.65rem",
+                          padding: "2px 6px", boxShadow: "1px 1px 0px black",
+                          display: "flex", alignItems: "center", gap: "4px"
+                        }}
+                      >
+                        <Trash2 size={12} /> DELETE
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ borderTop: "2px solid black", padding: "8px 12px", display: "flex", justifyContent: "flex-end" }}>
+              <button
+                className="btn"
+                onClick={() => { setIsTmuxSessionListOpen(false); setTmuxNewSessionName(""); setIsTmuxNewSessionOpen(true); }}
+                style={{ padding: "4px 10px", fontSize: "0.7rem", backgroundColor: "var(--system-green)", boxShadow: "2px 2px 0px black", display: "flex", alignItems: "center", gap: "4px" }}
+              >
+                <Plus size={12} /> NEW SESSION
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ───────── TMUX New Session Modal ───────── */}
+      {isTmuxNewSessionOpen && (
+        <>
+          <div
+            onClick={() => setIsTmuxNewSessionOpen(false)}
+            style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)", zIndex: 999 }}
+          />
+          <div style={{
+            position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+            width: "380px", maxWidth: "90%", backgroundColor: "var(--card-bg)",
+            border: "3px solid black", boxShadow: "8px 8px 0px black", zIndex: 1000,
+            display: "flex", flexDirection: "column"
+          }}>
+            <div style={{
+              backgroundColor: "var(--system-yellow)", borderBottom: "3px solid black",
+              padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center"
+            }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Plus size={16} />
+                NEW TMUX SESSION
+              </span>
+              <button onClick={() => setIsTmuxNewSessionOpen(false)} style={tmuxCloseBtnStyle}>✕</button>
+            </div>
+            <div style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>SESSION NAME:</label>
+                <input
+                  type="text"
+                  placeholder="e.g. my-session"
+                  value={tmuxNewSessionName}
+                  onChange={(e) => setTmuxNewSessionName(e.target.value)}
+                  className="font-mono"
+                  style={{
+                    border: "3px solid black", padding: "8px 12px", outline: "none",
+                    boxShadow: "3px 3px 0px black", fontSize: "0.85rem", fontWeight: 700,
+                    backgroundColor: "var(--secondary-bg)", color: "var(--text)"
+                  }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end" }}>
+                <button
+                  className="btn"
+                  onClick={() => setIsTmuxNewSessionOpen(false)}
+                  style={{ padding: "6px 12px", fontSize: "0.75rem", backgroundColor: "var(--card-bg)", boxShadow: "3px 3px 0px black" }}
+                >
+                  CANCEL
+                </button>
+                <button
+                  className="btn"
+                  disabled={!tmuxNewSessionName.trim()}
+                  onClick={() => {
+                    const name = tmuxNewSessionName.trim();
+                    if (!name) return;
+                    apiFetch("/api/plugins/tmux/new", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name })
+                    })
+                      .then(res => res.json())
+                      .then(data => {
+                        if (!data.success) {
+                          alert("Failed: " + data.message);
+                          return;
+                        }
+                        return apiFetch("/api/plugins/tmux/status");
+                      })
+                      .then(res => res && res.json())
+                      .then(data => {
+                        if (data) {
+                          setTmuxSessions(data.sessions || []);
+                          setInstalledPlugins(prev => ({ ...prev, tmux: data.installed }));
+                          setPluginStatuses(prev => ({ ...prev, tmux: data.status }));
+                        }
+                        setIsTmuxNewSessionOpen(false);
+                        setTmuxNewSessionName("");
+                      })
+                      .catch(() => alert("Failed to connect to server"));
+                  }}
+                  style={{
+                    padding: "6px 12px", fontSize: "0.75rem",
+                    backgroundColor: tmuxNewSessionName.trim() ? "var(--system-green)" : "#e2e8f0",
+                    cursor: tmuxNewSessionName.trim() ? "pointer" : "not-allowed",
+                    boxShadow: "3px 3px 0px black"
+                  }}
+                >
+                  SAVE
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ───────── TMUX Terminal Popup ───────── */}
+      {isTmuxTerminalOpen && tmuxSelectedSession && (
+        <>
+          {!isTmuxMinimized && !isTmuxMaximized && (
+            <div
+              onClick={() => { setIsTmuxTerminalOpen(false); setIsTmuxMinimized(false); setIsTmuxMaximized(false); }}
+              style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)", zIndex: 999 }}
+            />
+          )}
+          <TmuxTerminalPopup
+            sessionName={tmuxSelectedSession}
+            onClose={() => { setIsTmuxTerminalOpen(false); setIsTmuxMinimized(false); setIsTmuxMaximized(false); }}
+            isMinimized={isTmuxMinimized}
+            isMaximized={isTmuxMaximized}
+            onMinimize={() => setIsTmuxMinimized(!isTmuxMinimized)}
+            onMaximize={() => { setIsTmuxMaximized(!isTmuxMaximized); setIsTmuxMinimized(false); }}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ───────── TMUX Terminal Popup Component ─────────
+function TmuxTerminalPopup({ sessionName, onClose, isMinimized, isMaximized, onMinimize, onMaximize }: {
+  sessionName: string; onClose: () => void;
+  isMinimized: boolean; isMaximized: boolean;
+  onMinimize: () => void; onMaximize: () => void;
+}) {
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const termRef = useRef<any>(null);
+  const fitRef = useRef<any>(null);
+
+  const [connected, setConnected] = useState(false);
+  const [statusText, setStatusText] = useState("CONNECTING...");
+
+  const defaultW = Math.min(800, Math.floor(window.innerWidth * 0.75));
+  const defaultH = Math.min(560, Math.floor(window.innerHeight * 0.7));
+  const [pos, setPos] = useState(() => ({
+    x: (window.innerWidth - defaultW) / 2,
+    y: (window.innerHeight - defaultH) / 2,
+    w: defaultW, h: defaultH
+  }));
+  const dragRef = useRef<{ startX: number; startY: number; startL: number; startT: number } | null>(null);
+  const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
+
+  const onTitleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0 || isMaximized) return;
+    dragRef.current = { startX: e.clientX, startY: e.clientY, startL: pos.x, startT: pos.y };
+    const d = dragRef.current;
+    const onMove = (me: MouseEvent) => setPos(p => ({ ...p, x: d.startL + me.clientX - d.startX, y: d.startT + me.clientY - d.startY }));
+    const onUp = () => { dragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const onResizeMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (e.button !== 0 || isMaximized) return;
+    resizeRef.current = { startX: e.clientX, startY: e.clientY, startW: pos.w, startH: pos.h };
+    const r = resizeRef.current;
+    const onMove = (me: MouseEvent) => setPos(p => ({
+      ...p,
+      w: Math.max(400, r.startW + me.clientX - r.startX),
+      h: Math.max(280, r.startH + me.clientY - r.startY)
+    }));
+    const onUp = () => { resizeRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  useEffect(() => {
+    if (!terminalRef.current || isMinimized) return;
+
+    let alive = true;
+
+    const initTerminal = async () => {
+      const { Terminal } = await import("xterm");
+      const { FitAddon } = await import("xterm-addon-fit");
+      if (!alive) return;
+
+      const term = new Terminal({
+        cursorBlink: true, fontSize: 14, fontFamily: "'Space Mono', monospace",
+        convertEol: true, cols: 80, rows: 24, cursorStyle: "bar",
+        allowTransparency: true, theme: { background: "#0a0a0a", foreground: "#e0e0e0", cursor: "#e0e0e0", selectionBackground: "#333333" }
+      });
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(terminalRef.current!);
+      setTimeout(() => fitAddon.fit(), 100);
+      termRef.current = term;
+      fitRef.current = fitAddon;
+
+      const ws = apiWs(`/api/plugins/tmux/terminal?session=${encodeURIComponent(sessionName)}`);
+      ws.onopen = () => { setConnected(true); setStatusText("CONNECTED"); term.focus(); };
+      ws.onmessage = (e) => { term.clear(); term.write(e.data); };
+      ws.onerror = () => { setConnected(false); setStatusText("ERR"); try { term.write("\r\n[Connection error]\r\n"); } catch {} };
+      ws.onclose = () => { setConnected(false); setStatusText("DISC"); try { term.writeln("\r\n[Disconnected]"); } catch {} };
+      wsRef.current = ws;
+
+      term.onData((data: string) => { if (ws.readyState === WebSocket.OPEN) ws.send(data); });
+    };
+
+    initTerminal();
+
+    return () => {
+      alive = false;
+      if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+      if (termRef.current) { termRef.current.dispose(); termRef.current = null; fitRef.current = null; }
+    };
+  }, [sessionName, isMinimized]);
+
+  useEffect(() => {
+    if (fitRef.current && !isMinimized) {
+      setTimeout(() => fitRef.current.fit(), 100);
+    }
+  }, [isMaximized, isMinimized, pos.w, pos.h]);
+
+  let containerStyle: React.CSSProperties;
+  if (isMaximized) {
+    containerStyle = { position: "fixed", inset: 0, zIndex: 1000, display: "flex", flexDirection: "column", backgroundColor: "#000000", border: "none", boxShadow: "none" };
+  } else if (isMinimized) {
+    containerStyle = { position: "fixed", bottom: "16px", right: "16px", width: "260px", zIndex: 1000, backgroundColor: "#000000", border: "2px solid black", boxShadow: "4px 4px 0px black" };
+  } else {
+    containerStyle = { position: "fixed", left: pos.x, top: pos.y, width: pos.w, height: pos.h, zIndex: 1000, display: "flex", flexDirection: "column", backgroundColor: "#000000", border: "2px solid black", boxShadow: "6px 6px 0px black" };
+  }
+
+  return (
+    <div style={containerStyle}>
+      <div onMouseDown={onTitleMouseDown} style={{
+        backgroundColor: "var(--system-yellow)", borderBottom: "3px solid black",
+        padding: "6px 10px", display: "flex", justifyContent: "space-between",
+        alignItems: "center", flexShrink: 0, cursor: isMaximized ? "default" : "grab",
+        userSelect: "none"
+      }}>
+        <span className="font-syne" style={{ fontSize: "0.7rem", letterSpacing: "0.08em", display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: connected ? "var(--system-green)" : "var(--system-red)", display: "inline-block" }} />
+          TMUX :: {sessionName}
+        </span>
+        <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+          {!isMinimized && (
+            <button onMouseDown={e => e.stopPropagation()} onClick={onMinimize} title="Minimize" style={{
+              width: "20px", height: "20px", border: "2px solid black", backgroundColor: "#fef08a",
+              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+              padding: 0, fontSize: 0
+            }}><Minus size={11} /></button>
+          )}
+          <button onMouseDown={e => e.stopPropagation()} onClick={onMaximize} title={isMaximized ? "Restore" : "Maximize"} style={{
+            width: "20px", height: "20px", border: "2px solid black", backgroundColor: "#bbf7d0",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 0, fontSize: 0
+          }}><Square size={9} /></button>
+          <button onMouseDown={e => e.stopPropagation()} onClick={onClose} title="Close" style={{
+            width: "20px", height: "20px", border: "2px solid black", backgroundColor: "#fecaca",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 0, fontSize: 0
+          }}><X size={11} /></button>
+        </div>
+      </div>
+      {!isMinimized && (
+        <>
+          <div ref={terminalRef} style={{ flex: 1, minHeight: 0, borderTop: "1px solid #222" }} />
+          <div style={{
+            flexShrink: 0, padding: "2px 10px", backgroundColor: "#111",
+            borderTop: "1px solid #222", display: "flex", justifyContent: "space-between",
+            alignItems: "center", fontSize: "0.6rem", fontFamily: "'Space Mono', monospace",
+            color: "#666", letterSpacing: "0.05em"
+          }}>
+            <span>{sessionName}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: "4px", color: connected ? "var(--system-green)" : "var(--system-red)" }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: connected ? "var(--system-green)" : "var(--system-red)", display: "inline-block" }} />
+              {statusText}
+            </span>
+          </div>
+          {!isMaximized && (
+            <div onMouseDown={onResizeMouseDown} style={{
+              position: "absolute", bottom: 0, right: 0, width: 14, height: 14,
+              cursor: "nwse-resize", zIndex: 10
+            }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" style={{ position: "absolute", bottom: 0, right: 0 }}>
+                <line x1="14" y1="6" x2="6" y2="14" stroke="#444" strokeWidth="1.5" />
+                <line x1="14" y1="10" x2="10" y2="14" stroke="#444" strokeWidth="1.5" />
+              </svg>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function DeployView() {
+  const [projects, setProjects] = useState<any[]>([]);
+
+  // States for Deploy Modal
+  const [isDeployOpen, setIsDeployOpen] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [projectPort, setProjectPort] = useState("");
+  const [deployMethod, setDeployMethod] = useState<"github" | "folder">("github");
+  const [githubLink, setGithubLink] = useState("");
+  const [folderPath, setFolderPath] = useState("");
+  const [buildCommand, setBuildCommand] = useState("npm install && npm run build");
+  const [startCommand, setStartCommand] = useState("npm run start");
+  const [deployStep, setDeployStep] = useState<"form" | "logs">("form");
+  const [deployLogs, setDeployLogs] = useState<string>("");
+  const [isDeployLogsFinished, setIsDeployLogsFinished] = useState(false);
+  const [uploadType, setUploadType] = useState<"path" | "upload">("upload");
+  const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
+  const [isDeployMinimized, setIsDeployMinimized] = useState(false);
+  const [isDeployMaximized, setIsDeployMaximized] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  
+  // States for Edit Modal
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPort, setEditPort] = useState("");
+  const [editMethod, setEditMethod] = useState<"github" | "folder">("github");
+  const [editGithubLink, setEditGithubLink] = useState("");
+  const [editFolderPath, setEditFolderPath] = useState("");
+  const [editBuildCommand, setEditBuildCommand] = useState("");
+  const [editStartCommand, setEditStartCommand] = useState("");
+
+  // States for Logs Modal
+  const [isLogsOpen, setIsLogsOpen] = useState(false);
+  const [loggingProject, setLoggingProject] = useState<any>(null);
+
+  // Stats
+  const totalProjects = projects.length;
+  const runningProjects = projects.filter(p => p.status === "RUNNING" || p.status === "DEPLOYING").length;
+  const stoppedProjects = projects.filter(p => p.status === "STOPPED" || p.status === "ERROR").length;
+
+  // Fetch projects from backend on mount + polling
+  const fetchProjects = () => {
+    apiFetch("/api/deploy/projects")
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setProjects(data.map(p => ({
+            ...p,
+            // Map backend field names to what the UI expects
+            port: p.portDomain,
+            deployMethod: p.method,
+            githubLink: p.githubLink,
+            folderPath: p.folderPath,
+            buildCommand: p.buildCmd,
+            startCommand: p.startCmd,
+          })));
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchProjects();
+    const timer = setInterval(fetchProjects, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleToggleStatus = (id: number) => {
+    apiFetch(`/api/deploy/projects/${id}/toggle`, { method: "POST" })
+      .then(res => res.json())
+      .then(() => fetchProjects())
+      .catch(() => alert("Failed to toggle service"));
+  };
+
+  const handleDelete = (id: number) => {
+    if (window.confirm("Are you sure you want to delete this project? The workspace folder will remain on disk.")) {
+      apiFetch(`/api/deploy/projects/${id}`, { method: "DELETE" })
+        .then(() => fetchProjects())
+        .catch(() => alert("Failed to delete project"));
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const filesArray = Array.from(e.target.files).map(f => ({
+        name: f.name,
+        size: f.size,
+        path: f.webkitRelativePath || f.name
+      }));
+      setUploadedFiles(prev => [...prev, ...filesArray]);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const items = e.dataTransfer.items;
+    if (!items) return;
+
+    const filesArray: any[] = [];
+
+    const traverseFileTree = async (entry: any, path = "") => {
+      if (entry.isFile) {
+        const file = await new Promise<File>((resolve, reject) => {
+          entry.file(resolve, reject);
+        });
+        filesArray.push({
+          name: file.name,
+          size: file.size,
+          path: path + file.name
+        });
+      } else if (entry.isDirectory) {
+        const dirReader = entry.createReader();
+        const readEntries = async () => {
+          return new Promise<any[]>((resolve, reject) => {
+            dirReader.readEntries(resolve, reject);
+          });
+        };
+
+        let entries = await readEntries();
+        let allEntries = [...entries];
+        while (entries.length > 0) {
+          entries = await readEntries();
+          if (entries.length > 0) {
+            allEntries = [...allEntries, ...entries];
+          }
+        }
+
+        for (const childEntry of allEntries) {
+          await traverseFileTree(childEntry, path + entry.name + "/");
+        }
+      }
+    };
+
+    const promises: Promise<void>[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === "file") {
+        const entry = typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null;
+        if (entry) {
+          promises.push(traverseFileTree(entry));
+        }
+      }
+    }
+
+    try {
+      await Promise.all(promises);
+      setUploadedFiles(prev => [...prev, ...filesArray]);
+    } catch (err) {
+      console.error("Error reading dropped files/folders", err);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDeploy = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectName || !projectPort) return;
+
+    setDeployStep("logs");
+    setDeployLogs("");
+    setIsDeployLogsFinished(false);
+
+    // 1. Create project in DB
+    apiFetch("/api/deploy/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: projectName,
+        portDomain: projectPort,
+        method: deployMethod,
+        githubLink: deployMethod === "github" ? githubLink : "",
+        folderPath: deployMethod === "folder" ? (uploadType === "path" ? folderPath : "") : "",
+        buildCmd: buildCommand,
+        startCmd: startCommand,
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (!data.success) {
+        setDeployLogs(`[ERROR] Failed to create project: ${data.message}\n`);
+        setIsDeployLogsFinished(true);
+        return;
+      }
+      const projectId = data.project.id;
+
+      // 2. Open WebSocket to stream deploy logs
+      const ws = apiWs(`/api/deploy/projects/${projectId}/stream`);
+      ws.onmessage = (event) => {
+        setDeployLogs(prev => prev + event.data);
+      };
+      ws.onclose = () => {
+        setIsDeployLogsFinished(true);
+        fetchProjects();
+      };
+      ws.onerror = () => {
+        setDeployLogs(prev => prev + "[ERROR] WebSocket connection failed.\n");
+        setIsDeployLogsFinished(true);
+      };
+    })
+    .catch(err => {
+      setDeployLogs(`[ERROR] Network error: ${err.message}\n`);
+      setIsDeployLogsFinished(true);
+    });
+  };
+
+  const handleOpenEdit = (proj: any) => {
+    setEditingId(proj.id);
+    setEditName(proj.name);
+    setEditPort(proj.port);
+    setEditMethod(proj.deployMethod || "github");
+    setEditGithubLink(proj.githubLink || "");
+    setEditFolderPath(proj.folderPath || "");
+    setEditBuildCommand(proj.buildCommand || "");
+    setEditStartCommand(proj.startCommand || "");
+    setIsEditOpen(true);
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingId || !editName || !editPort) return;
+    apiFetch(`/api/deploy/projects/${editingId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: editName,
+        portDomain: editPort,
+        method: editMethod,
+        githubLink: editMethod === "github" ? editGithubLink : "",
+        folderPath: editMethod === "folder" ? editFolderPath : "",
+        buildCmd: editBuildCommand,
+        startCmd: editStartCommand,
+      })
+    })
+    .then(() => fetchProjects())
+    .catch(() => alert("Failed to save changes"));
+    setIsEditOpen(false);
+    setEditingId(null);
+  };
+
+  const handleOpenLogs = (proj: any) => {
+    setLoggingProject(proj);
+    setIsLogsOpen(true);
+  };
+
+  const getBindUrl = (v: string) => {
+    const val = v.trim();
+    if (/^\d+$/.test(val)) {
+      return `http://${window.location.hostname || "127.0.0.1"}:${val}`;
+    }
+    if (!/^https?:\/\//.test(val)) {
+      return `http://${val}`;
+    }
+    return val;
+  };
+
+  // Styles
+  const overlayStyle = {
+    position: "fixed" as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    backdropFilter: "blur(2px)",
+    zIndex: 999
+  };
+
+  const modalStyle = {
+    position: "fixed" as const,
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    width: "460px",
+    maxWidth: "95%",
+    maxHeight: "85vh",
+    overflowY: "auto" as const,
+    backgroundColor: "var(--card-bg)",
+    border: "3px solid black",
+    boxShadow: "8px 8px 0px black",
+    zIndex: 1000,
+    display: "flex",
+    flexDirection: "column" as const
+  };
+
+  const titleBarStyle = {
+    borderBottom: "3px solid black",
+    padding: "8px 12px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center"
+  };
+
+  const closeBtnStyle = {
+    width: "20px",
+    height: "20px",
+    border: "1.5px solid black",
+    backgroundColor: "#fecaca",
+    cursor: "pointer",
+    fontSize: "0.7rem",
+    fontWeight: "bold" as const,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    boxShadow: "1px 1px 0px black"
+  };
+
+  const inputContainerStyle = {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "4px"
+  };
+
+  const inputStyle = {
+    border: "3px solid black",
+    padding: "8px 12px",
+    outline: "none",
+    boxShadow: "3px 3px 0px black",
+    fontSize: "0.85rem",
+    fontWeight: 700,
+    backgroundColor: "var(--secondary-bg)",
+    color: "var(--text)"
+  };
+
+  const modalCancelStyle = {
+    padding: "6px 12px",
+    fontSize: "0.75rem",
+    backgroundColor: "var(--card-bg)",
+    boxShadow: "3px 3px 0px black"
+  };
+
+  const modalSaveStyle = {
+    padding: "6px 12px",
+    fontSize: "0.75rem",
+    backgroundColor: "var(--system-green)",
+    boxShadow: "3px 3px 0px black"
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <header style={{ marginBottom: "var(--space-lg)" }}>
+        <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>DEPLOY SERVICES</h2>
+        <p className="font-mono" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "var(--space-xs)" }}>
+          Manage production servers, containers, port binding, and virtualized workloads.
+        </p>
+      </header>
+
+      {/* Deploy Stats Grid */}
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: "repeat(3, 1fr)", 
+        gap: "var(--space-md)",
+        marginBottom: "var(--space-lg)"
+      }}>
+        {/* Total Project Card */}
+        <div className="card" style={{ backgroundColor: "var(--system-blue)", display: "flex", flexDirection: "column", padding: "var(--space-sm) var(--space-md)" }}>
+          <span className="font-heading" style={{ fontSize: "0.75rem", color: "black", fontWeight: 700 }}>TOTAL PROJECTS</span>
+          <span className="font-display" style={{ fontSize: "2.8rem", lineHeight: "1" }}>{totalProjects}</span>
+        </div>
+        
+        {/* Running Card */}
+        <div className="card" style={{ backgroundColor: "var(--system-green)", display: "flex", flexDirection: "column", padding: "var(--space-sm) var(--space-md)" }}>
+          <span className="font-heading" style={{ fontSize: "0.75rem", color: "black", fontWeight: 700 }}>RUNNING</span>
+          <span className="font-display" style={{ fontSize: "2.8rem", lineHeight: "1" }}>{runningProjects}</span>
+        </div>
+
+        {/* Stopped Card */}
+        <div className="card" style={{ backgroundColor: "var(--system-red)", display: "flex", flexDirection: "column", padding: "var(--space-sm) var(--space-md)" }}>
+          <span className="font-heading" style={{ fontSize: "0.75rem", color: "black", fontWeight: 700 }}>STOPPED</span>
+          <span className="font-display" style={{ fontSize: "2.8rem", lineHeight: "1" }}>{stoppedProjects}</span>
+        </div>
+      </div>
+
+      {/* Deployed Projects List Section */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-md)" }}>
+        <h3 className="font-heading" style={{ fontSize: "1.4rem" }}>DEPLOYED APPLICATIONS</h3>
+        <button 
+          className="btn" 
+          onClick={() => setIsDeployOpen(true)}
+          style={{ 
+            backgroundColor: "var(--system-yellow)", 
+            padding: "6px 12px", 
+            fontSize: "0.75rem",
+            boxShadow: "3px 3px 0px black" 
+          }}
+        >
+          + NEW DEPLOYMENT
+        </button>
+      </div>
+
+      {/* Projects Grid */}
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+        gap: "var(--space-md)" 
+      }}>
+        {projects.map(proj => (
+          <div key={proj.id} className="card" style={{ 
+            backgroundColor: "var(--card-bg)", 
+            padding: 0, 
+            display: "flex", 
+            flexDirection: "column",
+            minHeight: "230px",
+            overflow: "hidden"
+          }}>
+            {/* Top Indicator bar */}
+            <div style={{ 
+              backgroundColor: proj.status === "RUNNING" ? "var(--system-green)" : proj.status === "DEPLOYING" ? "var(--system-yellow)" : "var(--system-red)", 
+              borderBottom: "3px solid black", 
+              padding: "6px var(--space-sm)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center"
+            }}>
+              <a href={getBindUrl(proj.port)} target="_blank" rel="noopener noreferrer"
+                  className="font-mono"
+                  style={{ fontSize: "0.6rem", fontWeight: 700, backgroundColor: "var(--card-bg)", padding: "1px 4px", border: "1.5px solid black", color: "var(--text)", textDecoration: "none", cursor: "pointer" }}>
+                BIND: {(proj.port || "").toString().trim()}
+              </a>
+              <span className="badge" style={{ 
+                backgroundColor: "black", 
+                color: proj.status === "RUNNING" ? "var(--system-green)" : proj.status === "DEPLOYING" ? "var(--system-yellow)" : "var(--system-red)",
+                borderColor: "black",
+                fontSize: "0.6rem",
+                padding: "0px 3px"
+              }}>
+                {proj.status}
+              </span>
+            </div>
+
+            {/* Content Body */}
+            <div style={{ padding: "var(--space-sm)", flex: 1, display: "flex", flexDirection: "column" }}>
+              <h4 className="font-heading" style={{ fontSize: "0.95rem", marginBottom: "var(--space-xs)", color: "var(--text)", display: "flex", alignItems: "center", gap: "6px" }}>
+                {proj.name}
+                {proj.deployMethod === "github" ? (
+                  <span className="badge" style={{ fontSize: "0.5rem", padding: "0px 3px", backgroundColor: "var(--system-blue)", color: "black", borderColor: "black" }} title={proj.githubLink}>GH</span>
+                ) : (
+                  <span className="badge" style={{ fontSize: "0.5rem", padding: "0px 3px", backgroundColor: "#cbd5e1", color: "black", borderColor: "black" }} title={proj.folderPath}>DIR</span>
+                )}
+              </h4>
+              
+              {/* Specs info grid */}
+              <div style={{ 
+                border: "2px solid black", 
+                backgroundColor: "var(--secondary-bg)", 
+                padding: "4px 6px", 
+                display: "flex", 
+                flexDirection: "column",
+                gap: "2px",
+                marginTop: "auto"
+              }} className="font-mono">
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
+                  <span>METHOD:</span>
+                  <span style={{ fontWeight: 700 }}>{(proj.deployMethod || proj.method || "N/A").toUpperCase()}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
+                  <span>PID:</span>
+                  <span style={{ fontWeight: 700, color: proj.pid > 0 ? "var(--system-green)" : "#94a3b8" }}>
+                    {proj.pid > 0 ? proj.pid : "—"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem" }}>
+                  <span>CREATED:</span>
+                  <span style={{ fontWeight: 700 }}>{proj.createdAt ? proj.createdAt.split("T")[0] : "—"}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Actions footer */}
+            <div style={{ 
+              borderTop: "3px solid black", 
+              padding: "4px 8px", 
+              backgroundColor: "var(--secondary-bg)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center"
+            }}>
+              {/* Stop/Start toggle button */}
+              <button 
+                className="btn"
+                onClick={() => handleToggleStatus(proj.id)}
+                disabled={proj.status === "DEPLOYING"}
+                style={{ 
+                  padding: "2px 6px", 
+                  fontSize: "0.65rem", 
+                  boxShadow: "1.5px 1.5px 0px black",
+                  backgroundColor: (proj.status === "RUNNING" || proj.status === "DEPLOYING") ? "var(--system-red)" : "var(--system-green)",
+                  color: "black",
+                  fontWeight: 700,
+                  opacity: proj.status === "DEPLOYING" ? 0.5 : 1,
+                  cursor: proj.status === "DEPLOYING" ? "not-allowed" : "pointer"
+                }}
+              >
+                {(proj.status === "RUNNING" || proj.status === "DEPLOYING") ? "STOP" : "START"}
+              </button>
+
+              {/* Edit, logs, delete action buttons */}
+              <div style={{ display: "flex", gap: "4px" }}>
+                <button 
+                  className="btn"
+                  onClick={() => handleOpenEdit(proj)}
+                  style={{ 
+                    padding: "2px 5px", 
+                    fontSize: "0.6rem", 
+                    boxShadow: "1px 1px 0px black",
+                    backgroundColor: "white",
+                    color: "black"
+                  }}
+                >
+                  EDIT
+                </button>
+                <button 
+                  className="btn"
+                  onClick={() => handleOpenLogs(proj)}
+                  style={{ 
+                    padding: "2px 5px", 
+                    fontSize: "0.6rem", 
+                    boxShadow: "1px 1px 0px black",
+                    backgroundColor: "black",
+                    color: "white"
+                  }}
+                >
+                  LOGS
+                </button>
+                <button 
+                  className="btn"
+                  onClick={() => handleDelete(proj.id)}
+                  style={{ 
+                    padding: "2px 5px", 
+                    fontSize: "0.6rem", 
+                    boxShadow: "1px 1px 0px black",
+                    backgroundColor: "var(--system-red)",
+                    color: "black"
+                  }}
+                >
+                  DEL
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Deploy Modal */}
+      {isDeployOpen && (() => {
+        const deployModalStyle = isDeployMaximized
+          ? {
+              position: "fixed" as const,
+              top: 0,
+              left: 0,
+              width: "100vw",
+              height: "100vh",
+              backgroundColor: "white",
+              border: "3px solid black",
+              boxShadow: "none",
+              zIndex: 1000,
+              display: "flex",
+              flexDirection: "column" as const,
+              transition: "all 0.15s ease-out"
+            }
+          : isDeployMinimized
+            ? {
+                position: "fixed" as const,
+                bottom: "20px",
+                right: "20px",
+                width: "320px",
+                backgroundColor: "white",
+                border: "3px solid black",
+                boxShadow: "4px 4px 0px black",
+                zIndex: 1000,
+                display: "flex",
+                flexDirection: "column" as const,
+                transition: "all 0.15s ease-out"
+              }
+            : {
+                ...modalStyle,
+                transition: "all 0.15s ease-out"
+              };
+        return (
+          <>
+            {!isDeployMinimized && !isDeployMaximized && (
+              <div onClick={() => { if (deployStep === "form") setIsDeployOpen(false); }} style={overlayStyle} />
+            )}
+            <div style={deployModalStyle}>
+              <div style={{ ...titleBarStyle, backgroundColor: "var(--system-yellow)", cursor: "default" }}>
+                <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+                  {deployStep === "form" ? "DEPLOY NEW SERVICE" : "DEPLOYMENT LOGS"}
+                </span>
+                
+                {/* Window Controls */}
+                <div style={{ display: "flex", gap: "6px" }}>
+                  {/* Minimize Button */}
+                  <button 
+                    type="button"
+                    onClick={() => setIsDeployMinimized(!isDeployMinimized)}
+                    title="Minimize"
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      border: "1.5px solid black",
+                      backgroundColor: "#fef08a",
+                      cursor: "pointer",
+                      fontSize: "0.8rem",
+                      fontWeight: "bold",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      boxShadow: "1px 1px 0px black"
+                    }}
+                  >
+                    –
+                  </button>
+                  {/* Maximize Button */}
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setIsDeployMaximized(!isDeployMaximized);
+                      setIsDeployMinimized(false);
+                    }}
+                    title={isDeployMaximized ? "Restore Down" : "Maximize"}
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      border: "1.5px solid black",
+                      backgroundColor: "#bbf7d0",
+                      cursor: "pointer",
+                      fontSize: "0.7rem",
+                      fontWeight: "bold",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      boxShadow: "1px 1px 0px black"
+                    }}
+                  >
+                    {isDeployMaximized ? "❐" : "⬜"}
+                  </button>
+                  {/* Close Button */}
+                  <button 
+                    type="button"
+                    disabled={deployStep === "logs" && !isDeployLogsFinished}
+                    onClick={() => {
+                      // Reset and close
+                      setProjectName("");
+                      setProjectPort("");
+                      setGithubLink("");
+                      setFolderPath("");
+                      setBuildCommand("npm install && npm run build");
+                      setStartCommand("npm run start");
+                      setDeployStep("form");
+                      setUploadedFiles([]);
+                      setUploadType("upload");
+                      setIsDeployOpen(false);
+                      setIsDeployMinimized(false);
+                      setIsDeployMaximized(false);
+                    }}
+                    title="Close"
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      border: "1.5px solid black",
+                      backgroundColor: (deployStep === "logs" && !isDeployLogsFinished) ? "#cbd5e1" : "#fecaca",
+                      cursor: (deployStep === "logs" && !isDeployLogsFinished) ? "not-allowed" : "pointer",
+                      fontSize: "0.7rem",
+                      fontWeight: "bold",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      boxShadow: "1px 1px 0px black",
+                      opacity: (deployStep === "logs" && !isDeployLogsFinished) ? 0.5 : 1
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {!isDeployMinimized && (
+                <>
+
+            {deployStep === "form" ? (
+              <form onSubmit={handleDeploy} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+                {/* Project Name */}
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PROJECT NAME:</label>
+                  <input 
+                    type="text" 
+                    value={projectName} 
+                    onChange={(e) => setProjectName(e.target.value)} 
+                    placeholder="e.g. BACKEND APIS" 
+                    required
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
+
+                {/* Port / Domain Form */}
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PORT / DOMAIN:</label>
+                  <input 
+                    type="text" 
+                    value={projectPort} 
+                    onChange={(e) => setProjectPort(e.target.value)} 
+                    placeholder="e.g. 5000 or my-app.ndelok.me" 
+                    required
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
+
+                {/* Toggle Source Method */}
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>IMPORT METHOD:</label>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button 
+                      type="button"
+                      className="btn" 
+                      onClick={() => setDeployMethod("github")}
+                      style={{
+                        flex: 1,
+                        padding: "6px",
+                        fontSize: "0.7rem",
+                        backgroundColor: deployMethod === "github" ? "var(--system-blue)" : "white",
+                        boxShadow: deployMethod === "github" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                        transform: deployMethod === "github" ? "translate(1px, 1px)" : "none"
+                      }}
+                    >
+                      GITHUB REPO
+                    </button>
+                    <button 
+                      type="button"
+                      className="btn" 
+                      onClick={() => setDeployMethod("folder")}
+                      style={{
+                        flex: 1,
+                        padding: "6px",
+                        fontSize: "0.7rem",
+                        backgroundColor: deployMethod === "folder" ? "var(--system-blue)" : "white",
+                        boxShadow: deployMethod === "folder" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                        transform: deployMethod === "folder" ? "translate(1px, 1px)" : "none"
+                      }}
+                    >
+                      LOCAL FOLDER
+                    </button>
+                  </div>
+                </div>
+
+                {/* Github Link / Folder path conditionally */}
+                {deployMethod === "github" ? (
+                  <div style={inputContainerStyle}>
+                    <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>GITHUB SOURCE LINK:</label>
+                    <input 
+                      type="text" 
+                      value={githubLink} 
+                      onChange={(e) => setGithubLink(e.target.value)} 
+                      placeholder="e.g. https://github.com/username/project.git" 
+                      required={deployMethod === "github"}
+                      className="font-mono"
+                      style={inputStyle}
+                    />
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <div style={inputContainerStyle}>
+                      <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>IMPORT TYPE:</label>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button 
+                          type="button"
+                          className="btn" 
+                          onClick={() => setUploadType("upload")}
+                          style={{
+                            flex: 1,
+                            padding: "6px",
+                            fontSize: "0.7rem",
+                            backgroundColor: uploadType === "upload" ? "var(--system-blue)" : "white",
+                            boxShadow: uploadType === "upload" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                            transform: uploadType === "upload" ? "translate(1px, 1px)" : "none"
+                          }}
+                        >
+                          UPLOAD FILES/FOLDER
+                        </button>
+                        <button 
+                          type="button"
+                          className="btn" 
+                          onClick={() => setUploadType("path")}
+                          style={{
+                            flex: 1,
+                            padding: "6px",
+                            fontSize: "0.7rem",
+                            backgroundColor: uploadType === "path" ? "var(--system-blue)" : "white",
+                            boxShadow: uploadType === "path" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                            transform: uploadType === "path" ? "translate(1px, 1px)" : "none"
+                          }}
+                        >
+                          MANUAL PATH ON SERVER
+                        </button>
+                      </div>
+                    </div>
+
+                    {uploadType === "path" ? (
+                      <div style={inputContainerStyle}>
+                        <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>LOCAL FILE FOLDER PATH:</label>
+                        <input 
+                          type="text" 
+                          value={folderPath} 
+                          onChange={(e) => setFolderPath(e.target.value)} 
+                          placeholder="e.g. C:\projects\my-app or /var/www/my-app" 
+                          required={deployMethod === "folder" && uploadType === "path"}
+                          className="font-mono"
+                          style={inputStyle}
+                        />
+                      </div>
+                    ) : (
+                      <div style={inputContainerStyle}>
+                        <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>UPLOAD FILES / FOLDER:</label>
+                        <div 
+                          onDrop={handleDrop}
+                          onDragOver={handleDragOver}
+                          style={{
+                            border: "3px dashed black",
+                            padding: "16px",
+                            backgroundColor: "#f8fafc",
+                            textAlign: "center",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "10px",
+                            boxShadow: "3px 3px 0px black",
+                          }}
+                        >
+                          <span className="font-mono" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                            Drag & Drop your files/folder here, or
+                          </span>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => fileInputRef.current?.click()}
+                              style={{
+                                padding: "4px 8px",
+                                fontSize: "0.65rem",
+                                backgroundColor: "var(--system-yellow)",
+                                boxShadow: "2px 2px 0px black"
+                              }}
+                            >
+                              SELECT FILES
+                            </button>
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => folderInputRef.current?.click()}
+                              style={{
+                                padding: "4px 8px",
+                                fontSize: "0.65rem",
+                                backgroundColor: "var(--system-yellow)",
+                                boxShadow: "2px 2px 0px black"
+                              }}
+                            >
+                              SELECT FOLDER
+                            </button>
+                          </div>
+                          
+                          <input 
+                            type="file" 
+                            multiple 
+                            style={{ display: "none" }} 
+                            ref={fileInputRef} 
+                            onChange={handleFileChange} 
+                          />
+                          <input 
+                            type="file" 
+                            multiple 
+                            {...{ webkitdirectory: "", directory: "" } as any}
+                            style={{ display: "none" }} 
+                            ref={folderInputRef} 
+                            onChange={handleFileChange} 
+                          />
+                        </div>
+
+                        {/* Selected Files Preview List */}
+                        <div style={{ marginTop: "8px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                            <span className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>
+                              SELECTED ITEMS ({uploadedFiles.length}):
+                            </span>
+                            {uploadedFiles.length > 0 && (
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={() => setUploadedFiles([])}
+                                style={{
+                                  padding: "2px 6px",
+                                  fontSize: "0.6rem",
+                                  backgroundColor: "#fecaca",
+                                  boxShadow: "1.5px 1.5px 0px black"
+                                }}
+                              >
+                                CLEAR ALL
+                              </button>
+                            )}
+                          </div>
+                          
+                          <div className="font-mono" style={{
+                            maxHeight: "100px",
+                            overflowY: "auto",
+                            border: "2.5px solid black",
+                            backgroundColor: "#1e293b",
+                            color: "#f8fafc",
+                            padding: "6px",
+                            fontSize: "0.65rem",
+                            lineHeight: 1.3
+                          }}>
+                            {uploadedFiles.length === 0 ? (
+                              <div style={{ color: "#94a3b8", textAlign: "center", padding: "8px" }}>
+                                No files or folders selected.
+                              </div>
+                            ) : (
+                              uploadedFiles.map((file, idx) => (
+                                <div key={idx} style={{ 
+                                  display: "flex", 
+                                  justifyContent: "space-between", 
+                                  borderBottom: idx < uploadedFiles.length - 1 ? "1px solid #334155" : "none",
+                                  padding: "2px 0",
+                                  gap: "10px"
+                                }}>
+                                  <span style={{ 
+                                    textOverflow: "ellipsis", 
+                                    overflow: "hidden", 
+                                    whiteSpace: "nowrap",
+                                    flex: 1 
+                                  }} title={file.path}>
+                                    {file.path}
+                                  </span>
+                                  <span style={{ color: "#38bdf8", flexShrink: 0 }}>
+                                    {(file.size / 1024).toFixed(1)} KB
+                                  </span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Build install execution form */}
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>BUILD INSTALL EXECUTION COMMAND:</label>
+                  <input 
+                    type="text" 
+                    value={buildCommand} 
+                    onChange={(e) => setBuildCommand(e.target.value)} 
+                    placeholder="e.g. npm install && npm run build" 
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
+
+                {/* Daemon start sequence form */}
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>DAEMON START SEQUENCE COMMAND:</label>
+                  <input 
+                    type="text" 
+                    value={startCommand} 
+                    onChange={(e) => setStartCommand(e.target.value)} 
+                    placeholder="e.g. npm run start or pm2 start app.js" 
+                    required
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
+
+                {/* Modal Buttons */}
+                <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "var(--space-xs)" }}>
+                  <button type="button" className="btn" onClick={() => setIsDeployOpen(false)} style={modalCancelStyle}>CANCEL</button>
+                  <button type="submit" className="btn" style={modalSaveStyle}>DEPLOY SERVICE</button>
+                </div>
+              </form>
+            ) : (
+              <div style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+                <div>
+                  <h4 className="font-heading" style={{ fontSize: "0.85rem", marginBottom: "4px" }}>
+                    DEPLOYING: {projectName.toUpperCase()}
+                  </h4>
+                  <p style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                    Please wait while the server runs the install execution commands and binds the ports.
+                  </p>
+                </div>
+
+                {/* Monospace terminal logs */}
+                <div className="font-mono" style={{ 
+                  backgroundColor: "#000000", 
+                  color: "#22c55e", 
+                  padding: "12px", 
+                  fontSize: "0.7rem", 
+                  height: "220px", 
+                  overflowY: "auto",
+                  border: "2px solid black",
+                  boxShadow: "inset 0 0 10px rgba(0,0,0,0.8)",
+                  lineHeight: 1.4,
+                  whiteSpace: "pre-wrap"
+                }}>
+                  {deployLogs}
+                  {!isDeployLogsFinished && (
+                    <span style={{ 
+                      display: "inline-block", 
+                      width: "8px", 
+                      height: "12px", 
+                      backgroundColor: "#22c55e", 
+                      marginLeft: "4px",
+                      animation: "blink 1s infinite" 
+                    }}></span>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button 
+                    className="btn" 
+                    disabled={!isDeployLogsFinished}
+                    onClick={() => {
+                      // Reset and close
+                      setProjectName("");
+                      setProjectPort("");
+                      setGithubLink("");
+                      setFolderPath("");
+                      setBuildCommand("npm install && npm run build");
+                      setStartCommand("npm run start");
+                      setDeployStep("form");
+                      setUploadedFiles([]);
+                      setUploadType("upload");
+                      setIsDeployOpen(false);
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: "0.75rem",
+                      backgroundColor: isDeployLogsFinished ? "var(--system-green)" : "#e2e8f0",
+                      cursor: isDeployLogsFinished ? "pointer" : "not-allowed",
+                      boxShadow: "3px 3px 0px black",
+                      opacity: isDeployLogsFinished ? 1 : 0.6
+                    }}
+                  >
+                    {isDeployLogsFinished ? "FINISH & DONE" : "DEPLOYING SERVICE..."}
+                  </button>
+                </div>
+              </div>
+            )}
+                </>
+              )}
+            </div>
+          </>
+        );
+      })()}
+
+      {/* Edit Modal */}
+      {isEditOpen && (
+        <>
+          <div onClick={() => setIsEditOpen(false)} style={overlayStyle} />
+          <div style={modalStyle}>
+            <div style={{ ...titleBarStyle, backgroundColor: "var(--system-blue)" }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+                EDIT SERVICE DETAILS
+              </span>
+              <button onClick={() => setIsEditOpen(false)} style={closeBtnStyle}>✕</button>
+            </div>
+            <form onSubmit={handleSaveEdit} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+              {/* Project Name */}
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PROJECT NAME:</label>
+                <input 
+                  type="text" 
+                  value={editName} 
+                  onChange={(e) => setEditName(e.target.value)} 
+                  required
+                  className="font-mono"
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Port / Domain */}
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>PORT / DOMAIN:</label>
+                <input 
+                  type="text" 
+                  value={editPort} 
+                  onChange={(e) => setEditPort(e.target.value)} 
+                  required
+                  className="font-mono"
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Toggle Source Method */}
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>IMPORT METHOD:</label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button 
+                    type="button"
+                    className="btn" 
+                    onClick={() => setEditMethod("github")}
+                    style={{
+                      flex: 1,
+                      padding: "6px",
+                      fontSize: "0.7rem",
+                      backgroundColor: editMethod === "github" ? "var(--system-blue)" : "white",
+                      boxShadow: editMethod === "github" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                      transform: editMethod === "github" ? "translate(1px, 1px)" : "none"
+                    }}
+                  >
+                    GITHUB REPO
+                  </button>
+                  <button 
+                    type="button"
+                    className="btn" 
+                    onClick={() => setEditMethod("folder")}
+                    style={{
+                      flex: 1,
+                      padding: "6px",
+                      fontSize: "0.7rem",
+                      backgroundColor: editMethod === "folder" ? "var(--system-blue)" : "white",
+                      boxShadow: editMethod === "folder" ? "var(--shadow-active)" : "2.5px 2.5px 0px black",
+                      transform: editMethod === "folder" ? "translate(1px, 1px)" : "none"
+                    }}
+                  >
+                    LOCAL FOLDER
+                  </button>
+                </div>
+              </div>
+
+              {/* Github Link / Folder path conditionally */}
+              {editMethod === "github" ? (
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>GITHUB SOURCE LINK:</label>
+                  <input 
+                    type="text" 
+                    value={editGithubLink} 
+                    onChange={(e) => setEditGithubLink(e.target.value)} 
+                    placeholder="e.g. https://github.com/username/project.git" 
+                    required={editMethod === "github"}
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
+              ) : (
+                <div style={inputContainerStyle}>
+                  <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>LOCAL FILE FOLDER PATH:</label>
+                  <input 
+                    type="text" 
+                    value={editFolderPath} 
+                    onChange={(e) => setEditFolderPath(e.target.value)} 
+                    placeholder="e.g. C:\projects\my-app" 
+                    required={editMethod === "folder"}
+                    className="font-mono"
+                    style={inputStyle}
+                  />
+                </div>
+              )}
+
+              {/* Build install execution form */}
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>BUILD INSTALL EXECUTION COMMAND:</label>
+                <input 
+                  type="text" 
+                  value={editBuildCommand} 
+                  onChange={(e) => setEditBuildCommand(e.target.value)} 
+                  className="font-mono"
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Daemon start sequence form */}
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>DAEMON START SEQUENCE COMMAND:</label>
+                <input 
+                  type="text" 
+                  value={editStartCommand} 
+                  onChange={(e) => setEditStartCommand(e.target.value)} 
+                  required
+                  className="font-mono"
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Modal Buttons */}
+              <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end", marginTop: "var(--space-xs)" }}>
+                <button type="button" className="btn" onClick={() => setIsEditOpen(false)} style={modalCancelStyle}>CANCEL</button>
+                <button type="submit" className="btn" style={modalSaveStyle}>SAVE CHANGES</button>
+              </div>
+            </form>
+          </div>
+        </>
+      )}
+
+      {/* Logs Modal */}
+      {isLogsOpen && loggingProject && (
+        <ProjectLogsModal project={loggingProject} onClose={() => setIsLogsOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+// ───────── Project Logs Modal (real WebSocket stream) ─────────
+function ProjectLogsModal({ project, onClose }: { project: any; onClose: () => void }) {
+  const [logs, setLogs] = useState<string[]>([]);
+  const [connected, setConnected] = useState(false);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const ws = apiWs(`/api/deploy/projects/${project.id}/logs`);
+    ws.onopen = () => setConnected(true);
+    ws.onmessage = (e) => setLogs(prev => [...prev, e.data]);
+    ws.onerror = () => setLogs(prev => [...prev, "[ERROR] WebSocket connection failed"]);
+    ws.onclose = () => setConnected(false);
+    return () => ws.close();
+  }, [project.id]);
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  const overlayStyle: React.CSSProperties = {
+    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)", zIndex: 999
+  };
+
+  return (
+    <>
+      <div onClick={onClose} style={overlayStyle} />
+      <div style={{
+        position: "fixed", top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        width: "580px", maxWidth: "95%", maxHeight: "85vh",
+        backgroundColor: "white", border: "3px solid black",
+        boxShadow: "8px 8px 0px black", zIndex: 1000,
+        display: "flex", flexDirection: "column"
+      }}>
+        {/* Title bar */}
+        <div style={{ borderBottom: "3px solid black", padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "black", color: "white" }}>
+          <span className="font-heading" style={{ fontSize: "0.85rem", color: "white", display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: connected ? "var(--system-green)" : "#94a3b8", display: "inline-block" }} />
+            LOGS: {project.name} (PORT {project.port})
+          </span>
+          <button onClick={onClose} style={{ width: "20px", height: "20px", border: "1.5px solid #334155", backgroundColor: "#334155", color: "white", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}>✕</button>
+        </div>
+
+        {/* Config info */}
+        <div style={{ border: "none", borderBottom: "3px solid black", padding: "6px 12px", backgroundColor: "#f8fafc", fontSize: "0.65rem" }} className="font-mono">
+          <div><strong>DEPLOY METHOD:</strong> {project.deployMethod?.toUpperCase() || "N/A"}</div>
+          {project.deployMethod === "github" ? (
+            <div style={{ wordBreak: "break-all" }}><strong>GITHUB LINK:</strong> {project.githubLink}</div>
+          ) : (
+            <div><strong>FOLDER PATH:</strong> {project.folderPath || "N/A"}</div>
+          )}
+          <div><strong>BUILD CMD:</strong> {project.buildCommand || "N/A"}</div>
+          <div><strong>START CMD:</strong> {project.startCommand || "N/A"}</div>
+        </div>
+
+        {/* Log output */}
+        <div className="font-mono" style={{
+          backgroundColor: "#000000", color: "#22c55e",
+          padding: "12px", fontSize: "0.7rem",
+          flex: 1, minHeight: "240px", maxHeight: "400px", overflowY: "auto",
+          border: "none", lineHeight: 1.4, whiteSpace: "pre-wrap"
+        }}>
+          {logs.length === 0 ? (
+            <span style={{ color: "#64748b" }}>{connected ? "Waiting for log output..." : "Connecting..."}</span>
+          ) : (
+            logs.map((line, i) => <div key={i}>{line}</div>)
+          )}
+          <div ref={logsEndRef} />
+        </div>
+
+        {/* Footer */}
+        <div style={{ borderTop: "3px solid black", padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "#f8fafc" }}>
+          <span className="font-mono" style={{ fontSize: "0.6rem", color: "#64748b", display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: connected ? "var(--system-green)" : "#94a3b8", display: "inline-block" }} />
+            {connected ? "LIVE" : "DISCONNECTED"} — {logs.length} lines
+          </span>
+          <button className="btn" onClick={onClose} style={{ padding: "6px 12px", fontSize: "0.75rem", backgroundColor: "black", color: "white", boxShadow: "3px 3px 0px black" }}>
+            CLOSE
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+interface FileSystemItem {
+  id: string;
+  name: string;
+  type: "file" | "directory";
+  parentId: string | null;
+  size?: number; // KB
+  content?: string;
+  createdAt: string;
+}
+
+function ExplorerView() {
+  const [fs, setFs] = useState<FileSystemItem[]>([]);
+  const [currentFolderId, setCurrentFolderId] = useState<string>("/");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [clipboard, setClipboard] = useState<{ itemId: string; action: "copy" | "cut" } | null>(null);
+
+  // Modals for CRUD
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [createType, setCreateType] = useState<"file" | "directory">("file");
+  const [createName, setCreateName] = useState("");
+
+  const [isRenameOpen, setIsRenameOpen] = useState(false);
+  const [renameName, setRenameName] = useState("");
+
+  // Editor Modal Window
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editingFileId, setEditingFileId] = useState<string | null>(null);
+  const [editingFileContent, setEditingFileContent] = useState("");
+  const [isEditorMinimized, setIsEditorMinimized] = useState(false);
+  const [isEditorMaximized, setIsEditorMaximized] = useState(false);
+
+  // Drag and drop highlights
+  const [isDragOverPane, setIsDragOverPane] = useState(false);
+
+  const getBaseName = (path: string) => {
+    const lastSlash = path.lastIndexOf("/");
+    if (lastSlash === -1) return path;
+    return path.substring(lastSlash + 1);
+  };
+
+  // Fetch files from backend
+  const fetchFiles = async (folderId: string, search = "") => {
+    try {
+      const url = `/api/explorer/list?path=${encodeURIComponent(folderId)}${search ? `&search=${encodeURIComponent(search)}` : ""}`;
+      const res = await apiFetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setFs(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchFiles(currentFolderId, searchQuery);
+  }, [currentFolderId, searchQuery]);
+
+  // Breadcrumbs calculation
+  const getBreadcrumbs = () => {
+    const crumbs: { id: string; name: string }[] = [];
+    crumbs.push({ id: "/", name: "root" });
+    if (currentFolderId !== "root" && currentFolderId !== "/") {
+      const parts = currentFolderId.split("/").filter(Boolean);
+      let currentPath = "";
+      for (const part of parts) {
+        currentPath += "/" + part;
+        crumbs.push({ id: currentPath, name: part });
+      }
+    }
+    return crumbs;
+  };
+
+  const getRelativePath = (item: FileSystemItem): string => {
+    return item.id;
+  };
+
+  // Navigations
+  const fetchFileContent = async (filePath: string) => {
+    try {
+      const res = await apiFetch(`/api/explorer/content?path=${encodeURIComponent(filePath)}`);
+      if (res.ok) {
+        const text = await res.text();
+        setEditingFileContent(text);
+        setEditingFileId(filePath);
+        setIsEditorOpen(true);
+        setIsEditorMinimized(false);
+        setIsEditorMaximized(false);
+      } else {
+        alert("Failed to load file content.");
+      }
+    } catch {
+      alert("Failed to connect to server.");
+    }
+  };
+
+  const handleItemDoubleClick = (item: FileSystemItem) => {
+    if (item.type === "directory") {
+      setCurrentFolderId(item.id);
+      setSelectedId(null);
+      setSearchQuery("");
+    } else {
+      fetchFileContent(item.id);
+    }
+  };
+
+  const navigateUp = () => {
+    if (currentFolderId === "/" || currentFolderId === "root") return;
+    const lastSlash = currentFolderId.lastIndexOf("/");
+    if (lastSlash === 0) {
+      setCurrentFolderId("/");
+    } else if (lastSlash > 0) {
+      setCurrentFolderId(currentFolderId.substring(0, lastSlash));
+    }
+    setSelectedId(null);
+  };
+
+  // CRUD Actions
+  const handleCreateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createName.trim()) return;
+
+    try {
+      const res = await apiFetch(`/api/explorer/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parentPath: currentFolderId,
+          name: createName.trim(),
+          type: createType
+        }),
+      });
+      if (res.ok) {
+        setIsCreateOpen(false);
+        setCreateName("");
+        fetchFiles(currentFolderId);
+      } else {
+        const errText = await res.text();
+        alert(`Error: ${errText}`);
+      }
+    } catch {
+      alert("Failed to connect to server.");
+    }
+  };
+
+  const handleRenameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renameName.trim() || !selectedId) return;
+
+    try {
+      const res = await apiFetch(`/api/explorer/rename`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: selectedId,
+          newName: renameName.trim()
+        }),
+      });
+      if (res.ok) {
+        setIsRenameOpen(false);
+        setRenameName("");
+        setSelectedId(null);
+        fetchFiles(currentFolderId);
+      } else {
+        const errText = await res.text();
+        alert(`Error: ${errText}`);
+      }
+    } catch {
+      alert("Failed to connect to server.");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedId || selectedId === "root" || selectedId === "/") return;
+    const targetItem = fs.find(x => x.id === selectedId);
+    if (!targetItem) return;
+
+    if (window.confirm(`Are you sure you want to delete "${targetItem.name}"?`)) {
+      try {
+        const res = await apiFetch(`/api/explorer/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: selectedId }),
+        });
+        if (res.ok) {
+          setSelectedId(null);
+          fetchFiles(currentFolderId);
+        } else {
+          const errText = await res.text();
+          alert(`Error: ${errText}`);
+        }
+      } catch {
+        alert("Failed to connect to server.");
+      }
+    }
+  };
+
+  const handleOpenRename = () => {
+    if (!selectedId || selectedId === "root" || selectedId === "/") return;
+    const target = fs.find(x => x.id === selectedId);
+    if (target) {
+      setRenameName(target.name);
+      setIsRenameOpen(true);
+    }
+  };
+
+  // Clipboard operations
+  const handleCopy = () => {
+    if (selectedId && selectedId !== "/" && selectedId !== "root") {
+      setClipboard({ itemId: selectedId, action: "copy" });
+    }
+  };
+
+  const handleCut = () => {
+    if (selectedId && selectedId !== "/" && selectedId !== "root") {
+      setClipboard({ itemId: selectedId, action: "cut" });
+    }
+  };
+
+  const handlePaste = async () => {
+    if (!clipboard) return;
+    const targetPath = clipboard.itemId;
+    
+    // Prevent nesting cycle
+    if (currentFolderId === targetPath || currentFolderId.startsWith(targetPath + "/")) {
+      alert("Cannot paste a folder inside itself or its children!");
+      return;
+    }
+
+    try {
+      const endpoint = clipboard.action === "copy" ? "/api/explorer/copy" : "/api/explorer/move";
+      const res = await apiFetch(`${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          srcPath: targetPath,
+          destParentPath: currentFolderId
+        }),
+      });
+      if (res.ok) {
+        setClipboard(null);
+        fetchFiles(currentFolderId);
+      } else {
+        const errText = await res.text();
+        alert(`Error: ${errText}`);
+      }
+    } catch {
+      alert("Failed to connect to server.");
+    }
+  };
+
+  const handleSaveFileContent = async () => {
+    if (!editingFileId) return;
+    try {
+      const res = await apiFetch(`/api/explorer/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: editingFileId, content: editingFileContent }),
+      });
+      if (res.ok) {
+        setIsEditorOpen(false);
+        setEditingFileId(null);
+        fetchFiles(currentFolderId);
+      } else {
+        alert("Failed to save file.");
+      }
+    } catch {
+      alert("Failed to connect to server.");
+    }
+  };
+
+  // Drag and drop files upload
+  const handlePaneDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOverPane(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const filesArray = Array.from(e.dataTransfer.files);
+      const formData = new FormData();
+      formData.append("parentPath", currentFolderId);
+      filesArray.forEach(f => {
+        formData.append("files", f);
+      });
+
+      try {
+        const res = await apiFetch(`/api/explorer/upload`, {
+          method: "POST",
+          body: formData,
+        });
+        if (res.ok) {
+          fetchFiles(currentFolderId);
+        } else {
+          alert("Failed to upload files.");
+        }
+      } catch {
+        alert("Failed to upload files.");
+      }
+    }
+  };
+
+  // Selection list calculation
+  const filteredItems = fs;
+
+  const selectedItem = fs.find(x => x.id === selectedId);
+
+
+  // Styles
+  const layoutStyle = {
+    display: "flex",
+    gap: "var(--space-md)",
+    marginTop: "var(--space-md)"
+  };
+
+  const leftPaneStyle = {
+    flex: "0 0 200px",
+    backgroundColor: "var(--card-bg)",
+    border: "3px solid black",
+    boxShadow: "4px 4px 0px black",
+    padding: "12px",
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "12px"
+  };
+
+  const rightPaneStyle = {
+    flex: 1,
+    backgroundColor: "var(--card-bg)",
+    border: "3px solid black",
+    boxShadow: "8px 8px 0px black",
+    padding: "var(--space-md)",
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "var(--space-md)",
+    minHeight: "480px"
+  };
+
+  const toolbarStyle = {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap" as const
+  };
+
+  const breadcrumbsContainerStyle = {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    border: "3px solid black",
+    padding: "6px 12px",
+    backgroundColor: "var(--secondary-bg)",
+    color: "var(--text)",
+    fontSize: "0.75rem",
+    boxShadow: "3px 3px 0px black",
+    flexWrap: "wrap" as const
+  };
+
+  const searchInputStyle = {
+    border: "3px solid black",
+    padding: "6px 10px",
+    fontSize: "0.75rem",
+    outline: "none",
+    boxShadow: "3px 3px 0px black",
+    width: "100%",
+    backgroundColor: "var(--secondary-bg)",
+    color: "var(--text)"
+  };
+
+  const pathShortcutStyle = (active: boolean) => ({
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "6px 10px",
+    border: "2px solid black",
+    boxShadow: active ? "1px 1px 0px black" : "3px 3px 0px black",
+    backgroundColor: active ? "var(--system-blue)" : "var(--card-bg)",
+    transform: active ? "translate(1px, 1px)" : "none",
+    fontSize: "0.7rem",
+    fontWeight: 700,
+    cursor: "pointer"
+  });
+
+  // Modal styles reuse
+  const overlayStyle = {
+    position: "fixed" as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    backdropFilter: "blur(2px)",
+    zIndex: 999
+  };
+
+  const modalStyle = {
+    position: "fixed" as const,
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    width: "380px",
+    maxWidth: "95%",
+    backgroundColor: "var(--card-bg)",
+    border: "3px solid black",
+    boxShadow: "8px 8px 0px black",
+    zIndex: 1000,
+    display: "flex",
+    flexDirection: "column" as const
+  };
+
+  const titleBarStyle = {
+    borderBottom: "3px solid black",
+    padding: "8px 12px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center"
+  };
+
+  const closeBtnStyle = {
+    width: "20px",
+    height: "20px",
+    border: "1.5px solid black",
+    backgroundColor: "#fecaca",
+    cursor: "pointer",
+    fontSize: "0.7rem",
+    fontWeight: "bold" as const,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    boxShadow: "1px 1px 0px black"
+  };
+
+  const inputContainerStyle = {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "4px"
+  };
+
+  const inputStyle = {
+    border: "3px solid black",
+    padding: "8px 12px",
+    outline: "none",
+    boxShadow: "3px 3px 0px black",
+    fontSize: "0.85rem",
+    fontWeight: 700,
+    backgroundColor: "var(--secondary-bg)",
+    color: "var(--text)"
+  };
+
+  const modalCancelStyle = {
+    padding: "6px 12px",
+    fontSize: "0.75rem",
+    backgroundColor: "var(--card-bg)",
+    boxShadow: "3px 3px 0px black"
+  };
+
+  const modalSaveStyle = {
+    padding: "6px 12px",
+    fontSize: "0.75rem",
+    backgroundColor: "var(--system-green)",
+    boxShadow: "3px 3px 0px black"
+  };
+
+  // Editor Window Styles
+  const editorWindowStyle = isEditorMaximized
+    ? {
+        position: "fixed" as const,
+        top: 0,
+        left: 0,
+        width: "100vw",
+        height: "100vh",
+        backgroundColor: "var(--card-bg)",
+        border: "3px solid black",
+        boxShadow: "none",
+        zIndex: 1000,
+        display: "flex",
+        flexDirection: "column" as const,
+        transition: "all 0.15s ease-out"
+      }
+    : isEditorMinimized
+      ? {
+          position: "fixed" as const,
+          bottom: "20px",
+          right: "20px",
+          width: "320px",
+          backgroundColor: "var(--card-bg)",
+          border: "3px solid black",
+          boxShadow: "4px 4px 0px black",
+          zIndex: 1000,
+          display: "flex",
+          flexDirection: "column" as const,
+          transition: "all 0.15s ease-out"
+        }
+      : {
+          position: "fixed" as const,
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "550px",
+          maxWidth: "95%",
+          maxHeight: "85vh",
+          overflowY: "auto" as const,
+          backgroundColor: "var(--card-bg)",
+          border: "3px solid black",
+          boxShadow: "8px 8px 0px black",
+          zIndex: 1000,
+          display: "flex",
+          flexDirection: "column" as const,
+          transition: "all 0.15s ease-out"
+        };
+
+  const windowControlStyleMinimize = {
+    width: "20px",
+    height: "20px",
+    border: "1.5px solid black",
+    backgroundColor: "#fef08a",
+    cursor: "pointer",
+    fontSize: "0.8rem",
+    fontWeight: "bold" as const,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    boxShadow: "1px 1px 0px black"
+  };
+
+  const windowControlStyleMaximize = {
+    width: "20px",
+    height: "20px",
+    border: "1.5px solid black",
+    backgroundColor: "#bbf7d0",
+    cursor: "pointer",
+    fontSize: "0.7rem",
+    fontWeight: "bold" as const,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    boxShadow: "1px 1px 0px black"
+  };
+
+  const windowControlStyleClose = {
+    width: "20px",
+    height: "20px",
+    border: "1.5px solid black",
+    backgroundColor: "#fecaca",
+    cursor: "pointer",
+    fontSize: "0.7rem",
+    fontWeight: "bold" as const,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    boxShadow: "1px 1px 0px black"
+  };
+
+  const tableHeaderStyle = {
+    textAlign: "left" as const,
+    padding: "10px",
+    borderBottom: "3px solid black",
+    fontSize: "0.75rem",
+    fontWeight: "bold"
+  };
+
+  const tableRowStyle = (selected: boolean) => ({
+    backgroundColor: selected ? "var(--system-blue)" : "transparent",
+    borderBottom: "1.5px solid black",
+    cursor: "pointer",
+    transition: "background-color 0.1s"
+  });
+
+  const tableCellStyle = {
+    padding: "8px 10px",
+    fontSize: "0.75rem"
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <header style={{ marginBottom: "var(--space-lg)" }}>
+        <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>FILE EXPLORER</h2>
+        <p className="font-mono" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "var(--space-xs)" }}>
+          Browse server directories, view logs, edit configuration scripts, and execute file system operations.
+        </p>
+      </header>
+
+      {/* Explorer Layout */}
+      <div style={layoutStyle}>
+        
+        {/* Left pane: Quick Navigation bookmarks */}
+        <div style={leftPaneStyle}>
+          <span className="font-heading" style={{ fontSize: "0.75rem", letterSpacing: "1px", textTransform: "uppercase" }}>Quick Access</span>
+          <div style={pathShortcutStyle(currentFolderId === "/" || currentFolderId === "root")} onClick={() => { setCurrentFolderId("/"); setSelectedId(null); setSearchQuery(""); }}>
+            <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> ROOT (/)
+          </div>
+          <div style={pathShortcutStyle(currentFolderId === "/frontend/src" || currentFolderId === "dir-src")} onClick={() => { setCurrentFolderId("/frontend/src"); setSelectedId(null); setSearchQuery(""); }}>
+            <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> src/
+          </div>
+          <div style={pathShortcutStyle(currentFolderId === "/frontend/src/components" || currentFolderId === "dir-components")} onClick={() => { setCurrentFolderId("/frontend/src/components"); setSelectedId(null); setSearchQuery(""); }}>
+            <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> components/
+          </div>
+          <div style={pathShortcutStyle(currentFolderId === "/frontend/public" || currentFolderId === "dir-public")} onClick={() => { setCurrentFolderId("/frontend/public"); setSelectedId(null); setSearchQuery(""); }}>
+            <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} /> public/
+          </div>
+
+          <div style={{ marginTop: "auto", borderTop: "2px solid black", paddingTop: "8px" }}>
+            <div className="font-mono" style={{ fontSize: "0.6rem", color: "var(--text-muted)", lineHeight: 1.4 }}>
+              <div><strong>Clipboard:</strong> {clipboard ? `${clipboard.action.toUpperCase()} of ${getBaseName(clipboard.itemId)}` : "Empty"}</div>
+              <div style={{ marginTop: "4px" }}><strong>Selected:</strong> {selectedItem ? selectedItem.name : "None"}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right pane: Core File Manager */}
+        <div 
+          style={{
+            ...rightPaneStyle,
+            backgroundColor: isDragOverPane ? "var(--system-green)" : "var(--card-bg)",
+            border: isDragOverPane ? "3px dashed var(--system-green)" : "3px solid black"
+          }}
+          onDragOver={(e) => { e.preventDefault(); setIsDragOverPane(true); }}
+          onDragLeave={() => setIsDragOverPane(false)}
+          onDrop={handlePaneDrop}
+        >
+          {/* Top section: navigation bar and search */}
+          <div style={{ display: "flex", gap: "10px", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+            
+            {/* Navigation and Breadcrumbs */}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1 }}>
+              <button 
+                className="btn" 
+                onClick={navigateUp}
+                disabled={currentFolderId === "/" || currentFolderId === "root" || searchQuery !== ""}
+                style={{
+                  padding: "4px 8px",
+                  boxShadow: "2px 2px 0px black",
+                  opacity: currentFolderId === "root" || searchQuery !== "" ? 0.5 : 1,
+                  cursor: currentFolderId === "root" || searchQuery !== "" ? "not-allowed" : "pointer",
+                  backgroundColor: "var(--card-bg)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}
+                title="Up one level"
+              >
+                <ArrowUp size={14} />
+              </button>
+
+              <div style={breadcrumbsContainerStyle}>
+                <span style={{ fontWeight: 700, color: "var(--text-muted)" }}>SERVER:</span>
+                {searchQuery !== "" ? (
+                  <span className="font-mono" style={{ color: "var(--system-red)", fontWeight: 700 }}>SEARCH RESULTS</span>
+                ) : (
+                  getBreadcrumbs().map((crumb, idx) => (
+                    <Fragment key={crumb.id}>
+                      {idx > 0 && <ChevronRight size={10} />}
+                      <span 
+                        onClick={() => { setCurrentFolderId(crumb.id); setSelectedId(null); }}
+                        style={{ 
+                          cursor: "pointer", 
+                          fontWeight: crumb.id === currentFolderId ? 700 : 400,
+                          textDecoration: crumb.id === currentFolderId ? "none" : "underline"
+                        }}
+                      >
+                        {crumb.name === "root" ? "/" : crumb.name}
+                      </span>
+                    </Fragment>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Search Box */}
+            <div style={{ width: "200px" }}>
+              <input 
+                type="text" 
+                placeholder="Search files..."
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setSelectedId(null); }}
+                style={searchInputStyle}
+              />
+            </div>
+          </div>
+
+          {/* Action Toolbar */}
+          <div style={toolbarStyle}>
+            <button 
+              className="btn" 
+              onClick={() => { setCreateType("file"); setIsCreateOpen(true); }}
+              style={{ padding: "4px 10px", fontSize: "0.7rem", backgroundColor: "var(--system-yellow)", boxShadow: "3px 3px 0px black" }}
+            >
+              + NEW FILE
+            </button>
+            <button 
+              className="btn" 
+              onClick={() => { setCreateType("directory"); setIsCreateOpen(true); }}
+              style={{ padding: "4px 10px", fontSize: "0.7rem", backgroundColor: "var(--system-yellow)", boxShadow: "3px 3px 0px black" }}
+            >
+              + NEW FOLDER
+            </button>
+            <button 
+              className="btn" 
+              onClick={handleOpenRename}
+              disabled={!selectedId}
+              style={{ 
+                padding: "4px 10px", 
+                fontSize: "0.7rem", 
+                backgroundColor: "var(--card-bg)", 
+                boxShadow: "3px 3px 0px black",
+                opacity: selectedId ? 1 : 0.5,
+                cursor: selectedId ? "pointer" : "not-allowed"
+              }}
+            >
+              RENAME
+            </button>
+            <button 
+              className="btn" 
+              onClick={handleDelete}
+              disabled={!selectedId}
+              style={{ 
+                padding: "4px 10px", 
+                fontSize: "0.7rem", 
+                backgroundColor: "var(--system-red)", 
+                color: "black",
+                boxShadow: "3px 3px 0px black",
+                opacity: selectedId ? 1 : 0.5,
+                cursor: selectedId ? "pointer" : "not-allowed"
+              }}
+            >
+              DELETE
+            </button>
+            
+            <div style={{ width: "2px", backgroundColor: "black", margin: "0 4px" }} />
+            
+            <button 
+              className="btn" 
+              onClick={handleCopy}
+              disabled={!selectedId}
+              style={{ 
+                padding: "4px 10px", 
+                fontSize: "0.7rem", 
+                backgroundColor: "var(--card-bg)", 
+                boxShadow: "3px 3px 0px black",
+                opacity: selectedId ? 1 : 0.5,
+                cursor: selectedId ? "pointer" : "not-allowed"
+              }}
+            >
+              COPY
+            </button>
+            <button 
+              className="btn" 
+              onClick={handleCut}
+              disabled={!selectedId}
+              style={{ 
+                padding: "4px 10px", 
+                fontSize: "0.7rem", 
+                backgroundColor: "var(--card-bg)", 
+                boxShadow: "3px 3px 0px black",
+                opacity: selectedId ? 1 : 0.5,
+                cursor: selectedId ? "pointer" : "not-allowed"
+              }}
+            >
+              CUT
+            </button>
+            <button 
+              className="btn" 
+              onClick={handlePaste}
+              disabled={!clipboard}
+              style={{ 
+                padding: "4px 10px", 
+                fontSize: "0.7rem", 
+                backgroundColor: "var(--system-green)", 
+                boxShadow: "3px 3px 0px black",
+                opacity: clipboard ? 1 : 0.5,
+                cursor: clipboard ? "pointer" : "not-allowed"
+              }}
+            >
+              PASTE
+            </button>
+          </div>
+
+          {/* Files List Table */}
+          <div style={{ flex: 1, border: "3px solid black", overflowY: "auto", maxHeight: "350px", boxShadow: "inset 0 0 5px rgba(0,0,0,0.1)" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }} className="font-mono">
+              <thead>
+                <tr style={{ backgroundColor: "var(--secondary-bg)" }}>
+                  <th style={tableHeaderStyle}>NAME</th>
+                  <th style={tableHeaderStyle}>TYPE</th>
+                  <th style={tableHeaderStyle}>SIZE</th>
+                  <th style={tableHeaderStyle}>CREATED AT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: "center", padding: "30px", color: "#94a3b8", fontSize: "0.75rem" }}>
+                      Folder is empty. Drag & drop files here to upload.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredItems.map(item => (
+                    <tr 
+                      key={item.id} 
+                      onClick={() => setSelectedId(item.id)}
+                      onDoubleClick={() => handleItemDoubleClick(item)}
+                      style={tableRowStyle(selectedId === item.id)}
+                    >
+                      <td style={{ ...tableCellStyle, fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
+                        {item.type === "directory" ? (
+                          <Folder size={14} style={{ fill: "var(--system-yellow)", color: "black" }} />
+                        ) : (
+                           <FileText size={14} style={{ color: "var(--text-muted)" }} />
+                        )}
+                        <span>
+                          {searchQuery !== "" ? getRelativePath(item) : item.name}
+                        </span>
+                      </td>
+                      <td style={tableCellStyle}>
+                        {item.type === "directory" ? "Directory" : "File"}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {item.type === "file" ? `${item.size} KB` : "—"}
+                      </td>
+                      <td style={tableCellStyle}>
+                        {item.createdAt}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* CREATE FILE / FOLDER DIALOG POPUP */}
+      {isCreateOpen && (
+        <>
+          <div onClick={() => setIsCreateOpen(false)} style={overlayStyle} />
+          <div style={modalStyle}>
+            <div style={{ ...titleBarStyle, backgroundColor: "var(--system-yellow)" }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black" }}>
+                CREATE NEW {createType.toUpperCase()}
+              </span>
+              <button onClick={() => setIsCreateOpen(false)} style={closeBtnStyle}>✕</button>
+            </div>
+            <form onSubmit={handleCreateSubmit} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>
+                  {createType.toUpperCase()} NAME:
+                </label>
+                <input 
+                  type="text" 
+                  value={createName} 
+                  onChange={(e) => setCreateName(e.target.value)} 
+                  placeholder={createType === "file" ? "e.g. index.html" : "e.g. assets"} 
+                  required
+                  className="font-mono"
+                  style={inputStyle}
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end" }}>
+                <button type="button" className="btn" onClick={() => setIsCreateOpen(false)} style={modalCancelStyle}>CANCEL</button>
+                <button type="submit" className="btn" style={modalSaveStyle}>CREATE</button>
+              </div>
+            </form>
+          </div>
+        </>
+      )}
+
+      {/* RENAME DIALOG POPUP */}
+      {isRenameOpen && (
+        <>
+          <div onClick={() => setIsRenameOpen(false)} style={overlayStyle} />
+          <div style={modalStyle}>
+            <div style={{ ...titleBarStyle, backgroundColor: "var(--system-yellow)" }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black" }}>
+                RENAME ITEM
+              </span>
+              <button onClick={() => setIsRenameOpen(false)} style={closeBtnStyle}>✕</button>
+            </div>
+            <form onSubmit={handleRenameSubmit} style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+              <div style={inputContainerStyle}>
+                <label className="font-mono" style={{ fontSize: "0.7rem", fontWeight: 700 }}>NEW NAME:</label>
+                <input 
+                  type="text" 
+                  value={renameName} 
+                  onChange={(e) => setRenameName(e.target.value)} 
+                  placeholder="e.g. new-name.ext" 
+                  required
+                  className="font-mono"
+                  style={inputStyle}
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end" }}>
+                <button type="button" className="btn" onClick={() => setIsRenameOpen(false)} style={modalCancelStyle}>CANCEL</button>
+                <button type="submit" className="btn" style={modalSaveStyle}>RENAME</button>
+              </div>
+            </form>
+          </div>
+        </>
+      )}
+
+      {/* FILE CODE EDITOR WINDOW MODAL */}
+      {isEditorOpen && (() => {
+        const currentFile = fs.find(x => x.id === editingFileId);
+        return (
+          <>
+            {!isEditorMinimized && !isEditorMaximized && (
+              <div onClick={() => { setIsEditorOpen(false); setEditingFileId(null); }} style={overlayStyle} />
+            )}
+            <div style={editorWindowStyle}>
+              {/* Title Bar */}
+              <div style={{ ...titleBarStyle, backgroundColor: "var(--system-blue)", color: "black", cursor: "default" }}>
+                <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+                  EDITING: {currentFile?.name}
+                </span>
+                
+                {/* Window Controls */}
+                <div style={{ display: "flex", gap: "6px" }}>
+                  {/* Minimize */}
+                  <button 
+                    type="button"
+                    onClick={() => setIsEditorMinimized(!isEditorMinimized)}
+                    title="Minimize"
+                    style={windowControlStyleMinimize}
+                  >
+                    –
+                  </button>
+                  {/* Maximize */}
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setIsEditorMaximized(!isEditorMaximized);
+                      setIsEditorMinimized(false);
+                    }}
+                    title={isEditorMaximized ? "Restore Down" : "Maximize"}
+                    style={windowControlStyleMaximize}
+                  >
+                    {isEditorMaximized ? "❐" : "⬜"}
+                  </button>
+                  {/* Close */}
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setIsEditorOpen(false);
+                      setEditingFileId(null);
+                    }}
+                    title="Close"
+                    style={windowControlStyleClose}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {!isEditorMinimized && (
+                <div style={{ padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)", flex: 1 }}>
+                  <div>
+                    <h4 className="font-heading" style={{ fontSize: "0.85rem", marginBottom: "4px" }}>
+                      FILE CONTENT EDITOR
+                    </h4>
+                    <p style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                      You are editing a server codebase file. Saved modifications are applied in memory.
+                    </p>
+                  </div>
+
+                  <textarea
+                    className="font-mono"
+                    value={editingFileContent}
+                    onChange={(e) => setEditingFileContent(e.target.value)}
+                    style={{
+                      width: "100%",
+                      height: isEditorMaximized ? "calc(100vh - 180px)" : "260px",
+                      border: "3px solid black",
+                      padding: "12px",
+                      fontSize: "0.75rem",
+                      outline: "none",
+                      boxShadow: "inset 2px 2px 5px rgba(0,0,0,0.15)",
+                      lineHeight: 1.4,
+                      resize: "none",
+                      backgroundColor: "#0f172a",
+                      color: "#e2e8f0"
+                    }}
+                  />
+
+                  <div style={{ display: "flex", gap: "var(--space-sm)", justifyContent: "flex-end" }}>
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      onClick={() => { setIsEditorOpen(false); setEditingFileId(null); }} 
+                      style={modalCancelStyle}
+                    >
+                      CANCEL
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      onClick={handleSaveFileContent} 
+                      style={modalSaveStyle}
+                    >
+                      SAVE CHANGES
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
+    </div>
+  );
+}
+
+interface LogItem {
+  timestamp: string;
+  level: "INFO" | "WARN" | "ERROR";
+  source: string;
+  message: string;
+}
+
+function LogsTermView() {
+  const [logs, setLogs] = useState<LogItem[]>([
+    { timestamp: "01:52:10", level: "INFO", source: "SYSTEM", message: "Ndelok daemon listener initialized successfully." },
+    { timestamp: "01:52:12", level: "INFO", source: "ZEROTIER", message: "Joined virtual overlay network 8056c85e45c71a39." },
+    { timestamp: "01:52:15", level: "INFO", source: "DOCKER", message: "Container database-postgres started on port 5432." },
+    { timestamp: "01:52:18", level: "WARN", source: "MONITOR", message: "CPU Core #2 temperature spiked above 78C." },
+    { timestamp: "01:52:20", level: "INFO", source: "CLOUDFLARE", message: "Tunnel connection established to PoP CGK." },
+    { timestamp: "01:52:25", level: "ERROR", source: "SYSTEM", message: "Failed healthcheck response on payment-system:3002." },
+    { timestamp: "01:52:26", level: "WARN", source: "PM2", message: "Process payment-system restarted automatically (exit code 1)." }
+  ]);
+
+  const [isStreaming, setIsStreaming] = useState(true);
+  const [logFilter, setLogFilter] = useState<"ALL" | "INFO" | "WARN" | "ERROR">("ALL");
+
+  // Panel maximize/minimize states
+  const [isLogMinimized, setIsLogMinimized] = useState(false);
+  const [isLogMaximized, setIsLogMaximized] = useState(false);
+  const [isTermMinimized, setIsTermMinimized] = useState(false);
+  const [isTermMaximized, setIsTermMaximized] = useState(false);
+
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const termRef = useRef<any>(null);
+  const fitRef = useRef<any>(null);
+  const [termConnected, setTermConnected] = useState(false);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  // Real-time system log generator
+  useEffect(() => {
+    if (!isStreaming) return;
+
+    const logTemplates = [
+      { level: "INFO" as const, source: "MONITOR", message: "CPU load stabilized at 24%. Memory: 312MB / 2048MB." },
+      { level: "INFO" as const, source: "CLOUDFLARE", message: "Tunnel latency check PoP CGK: 12ms | PoP SIN: 24ms." },
+      { level: "INFO" as const, source: "ZEROTIER", message: "Peer transmission check: 12 active connections." },
+      { level: "WARN" as const, source: "SYSTEM", message: "Disk storage space usage reached 82% on root partition." },
+      { level: "INFO" as const, source: "DOCKER", message: "Garbage collection completed. Pruned 0 unused layers." },
+      { level: "ERROR" as const, source: "AUTHENTICATION", message: "Invalid API secret signature from IP 182.253.12.8." },
+      { level: "WARN" as const, source: "DATABASE", message: "Connection pool exhausted (100/100 connections in use) - scaling queue." }
+    ];
+
+    const interval = setInterval(() => {
+      const template = logTemplates[Math.floor(Math.random() * logTemplates.length)];
+      const now = new Date();
+      const timeStr = now.toTimeString().split(" ")[0];
+
+      setLogs(prev => [...prev, {
+        timestamp: timeStr,
+        level: template.level,
+        source: template.source,
+        message: template.message
+      }]);
+    }, 3500);
+
+    return () => clearInterval(interval);
+  }, [isStreaming]);
+
+  // Terminal xterm.js + WebSocket init — runs ONCE, never re-creates
+  useEffect(() => {
+    if (!terminalRef.current) return;
+
+    let alive = true;
+    const initTerminal = async () => {
+      const { Terminal } = await import("xterm");
+      const { FitAddon } = await import("xterm-addon-fit");
+      if (!alive || !terminalRef.current) return;
+
+      const term = new Terminal({
+        cursorBlink: true, fontSize: 13, fontFamily: "'Space Mono', monospace",
+        convertEol: true, cols: 80, rows: 24, cursorStyle: "bar",
+        allowTransparency: true, theme: { background: "#000000", foreground: "#e0e0e0", cursor: "#e0e0e0", selectionBackground: "#333333" }
+      });
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(terminalRef.current);
+      setTimeout(() => fitAddon.fit(), 100);
+      termRef.current = term;
+      fitRef.current = fitAddon;
+
+      const ws = apiWs("/api/terminal");
+      ws.onopen = () => { setTermConnected(true); term.focus(); };
+      ws.onmessage = (e) => { term.write(e.data); };
+      ws.onerror = () => { setTermConnected(false); term.writeln("\r\n\x1b[31m[Connection error]\x1b[0m\r\n"); };
+      ws.onclose = () => { setTermConnected(false); };
+      wsRef.current = ws;
+
+      term.onData((data: string) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(data);
+      });
+
+      term.onResize(({ cols, rows }) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ __resize__: true, cols, rows }));
+        }
+      });
+    };
+
+    initTerminal();
+    return () => { alive = false; if (wsRef.current) { wsRef.current.close(); wsRef.current = null; } if (termRef.current) { termRef.current.dispose(); termRef.current = null; fitRef.current = null; } };
+  }, []);
+
+  // Fit terminal on maximize or window resize
+  useEffect(() => {
+    if (fitRef.current && !isTermMinimized) {
+      setTimeout(() => fitRef.current.fit(), 120);
+    }
+  }, [isTermMaximized]);
+
+  // Log Filtering
+  const filteredLogs = logs.filter(log => {
+    if (logFilter === "ALL") return true;
+    return log.level === logFilter;
+  });
+
+  // Styles
+  const containerStyle = {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "var(--space-md)",
+    height: "calc(100vh - 190px)",
+    marginTop: "var(--space-md)"
+  };
+
+  const consoleBoxStyle = {
+    backgroundColor: "white",
+    border: "3px solid black",
+    boxShadow: "8px 8px 0px black",
+    display: "flex",
+    flexDirection: "column" as const,
+    overflow: "hidden" as const
+  };
+
+  const consoleHeaderStyle = (color: string) => ({
+    backgroundColor: color,
+    borderBottom: "3px solid black",
+    padding: "8px 12px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center"
+  });
+
+  const streamBodyStyle = {
+    flex: 1,
+    backgroundColor: "#090d16",
+    padding: "12px",
+    overflowY: "auto" as const,
+    lineHeight: 1.4
+  };
+
+  const toolbarStyle = {
+    display: "flex",
+    gap: "6px",
+    alignItems: "center"
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <header style={{ marginBottom: "var(--space-lg)" }}>
+        <h2 style={{ fontSize: "2.8rem", letterSpacing: "-1px" }}>LOGS & TERMINAL</h2>
+        <p className="font-mono" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "var(--space-xs)" }}>
+          Monitor live system logs stream and execute server operations inside the interactive SSH shell console.
+        </p>
+      </header>
+
+      {/* Main split grid */}
+      <div style={containerStyle}>
+        
+        {/* Left Pane: Log Stream */}
+        <div style={consoleBoxStyle}>
+          <div style={consoleHeaderStyle("var(--system-green)")}>
+            <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+              SYSTEM LOG STREAM
+            </span>
+            <div style={toolbarStyle}>
+              {/* Filter Select Buttons */}
+              <div style={{ display: "flex", border: "2px solid black", boxShadow: "1px 1px 0px black", backgroundColor: "white" }}>
+                {(["ALL", "INFO", "WARN", "ERROR"] as const).map(f => (
+                  <button 
+                    key={f}
+                    onClick={() => setLogFilter(f)}
+                    style={{
+                      padding: "2px 6px",
+                      fontSize: "0.6rem",
+                      fontWeight: "bold",
+                      border: "none",
+                      borderRight: f !== "ERROR" ? "1.5px solid black" : "none",
+                      backgroundColor: logFilter === f ? "var(--system-blue)" : "white",
+                      cursor: "pointer"
+                    }}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+
+              {/* Pause/Resume button */}
+              <button 
+                className="btn"
+                onClick={() => setIsStreaming(!isStreaming)}
+                style={{
+                  padding: "2px 6px",
+                  fontSize: "0.6rem",
+                  backgroundColor: isStreaming ? "#fef08a" : "var(--system-green)",
+                  boxShadow: "1.5px 1.5px 0px black"
+                }}
+              >
+                {isStreaming ? "PAUSE" : "RESUME"}
+              </button>
+
+              {/* Clear button */}
+              <button 
+                className="btn"
+                onClick={() => setLogs([])}
+                style={{
+                  padding: "2px 6px",
+                  fontSize: "0.6rem",
+                  backgroundColor: "#fecaca",
+                  boxShadow: "1.5px 1.5px 0px black"
+                }}
+              >
+                CLEAR
+              </button>
+
+              {/* Minimize button */}
+              <button
+                onClick={() => { setIsLogMinimized(v => !v); setIsLogMaximized(false); }}
+                title={isLogMinimized ? "Restore" : "Minimize"}
+                style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#fef08a", cursor: "pointer", fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}
+              >–</button>
+
+              {/* Maximize button */}
+              <button
+                onClick={() => { setIsLogMaximized(v => !v); setIsLogMinimized(false); }}
+                title={isLogMaximized ? "Restore Down" : "Maximize"}
+                style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#bbf7d0", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}
+              >{isLogMaximized ? "❐" : "⬜"}</button>
+            </div>
+          </div>
+
+          {!isLogMinimized && (
+            <div style={streamBodyStyle} className="font-mono">
+              {filteredLogs.length === 0 ? (
+                <div style={{ color: "var(--text-muted)", textAlign: "center", padding: "20px", fontSize: "0.75rem" }}>
+                  No logs generated yet or logs cleared.
+                </div>
+              ) : (
+                filteredLogs.map((log, idx) => (
+                  <div key={idx} style={{ display: "flex", gap: "8px", borderBottom: "1px solid #141b2d", padding: "4px 0", fontSize: "0.7rem", alignItems: "flex-start" }}>
+                    <span style={{ color: "#64748b", flexShrink: 0 }}>[{log.timestamp}]</span>
+                    <span style={{ 
+                      color: log.level === "ERROR" ? "var(--system-red)" : log.level === "WARN" ? "var(--system-yellow)" : "var(--system-green)",
+                      fontWeight: "bold",
+                      flexShrink: 0
+                    }}>[{log.level}]</span>
+                    <span style={{ color: "#38bdf8", fontWeight: 700, flexShrink: 0 }}>[{log.source}]</span>
+                    <span style={{ color: "#e2e8f0" }}>{log.message}</span>
+                  </div>
+                ))
+              )}
+              <div ref={logsEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Right Pane: SSH Terminal Console */}
+        <div style={{ ...consoleBoxStyle, overflow: isTermMaximized ? "visible" : "hidden" }}>
+          {/* Hide header when maximized (shown inside terminal overlay instead) */}
+          <div style={{ ...consoleHeaderStyle("var(--system-blue)"), display: isTermMaximized ? "none" : "flex" }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: termConnected ? "var(--system-green)" : "var(--system-red)", display: "inline-block" }} />
+                SSH TERMINAL CONSOLE
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <div className="badge font-mono" style={{ fontSize: "0.6rem", backgroundColor: "black", color: "white" }}>
+                  admin@ndelok-server
+                </div>
+              {/* Minimize button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); setIsTermMinimized(v => !v); setIsTermMaximized(false); }}
+                title={isTermMinimized ? "Restore" : "Minimize"}
+                style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#fef08a", cursor: "pointer", fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}
+              >–</button>
+              {/* Maximize button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); setIsTermMaximized(v => !v); setIsTermMinimized(false); }}
+                title={isTermMaximized ? "Restore Down" : "Maximize"}
+                style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#bbf7d0", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}
+              >{isTermMaximized ? "❐" : "⬜"}</button>
+            </div>
+          </div>
+
+          {/* Terminal always rendered — CSS handles hide/reposition */}
+          <div ref={terminalRef} style={{
+            flex: 1, minHeight: 0, backgroundColor: "#000000",
+            borderTop: isTermMaximized ? "none" : "1px solid #222",
+            overflow: "hidden",
+            display: isTermMinimized ? "none" : undefined,
+            position: isTermMaximized ? "fixed" : undefined,
+            inset: isTermMaximized ? 0 : undefined,
+            zIndex: isTermMaximized ? 9999 : undefined,
+            paddingTop: isTermMaximized ? "44px" : undefined,
+          }}>
+            {/* Header bar shown only when maximized */}
+            {isTermMaximized && (
+              <div style={{
+                position: "absolute", top: 0, left: 0, right: 0, height: "44px",
+                ...consoleHeaderStyle("var(--system-blue)"),
+                zIndex: 1, cursor: "default"
+              }}>
+                <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: termConnected ? "var(--system-green)" : "var(--system-red)", display: "inline-block" }} />
+                  SSH TERMINAL CONSOLE
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div className="badge font-mono" style={{ fontSize: "0.6rem", backgroundColor: "black", color: "white" }}>admin@ndelok-server</div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsTermMaximized(false); }}
+                    title="Restore Down"
+                    style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#bbf7d0", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}
+                  >❐</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+      </div>
+
+      {/* Terminal maximized backdrop */}
+      {isTermMaximized && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 9998 }} onClick={() => setIsTermMaximized(false)} />
+      )}
+
+      {/* Log Stream Maximized Overlay */}
+      {isLogMaximized && (
+        <>
+          <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", zIndex: 998 }} onClick={() => setIsLogMaximized(false)} />
+          <div style={{ position: "fixed", inset: 0, zIndex: 999, display: "flex", flexDirection: "column", backgroundColor: "#090d16", border: "3px solid black", boxShadow: "0 0 0 4px black" }}>
+            <div style={{ ...consoleHeaderStyle("var(--system-green)"), flexShrink: 0 }}>
+              <span className="font-heading" style={{ fontSize: "0.85rem", color: "black", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ display: "inline-block", width: "10px", height: "10px", backgroundColor: "white", border: "1.5px solid black", borderRadius: "50%" }}></span>
+                SYSTEM LOG STREAM
+              </span>
+              <div style={toolbarStyle}>
+                <div style={{ display: "flex", border: "2px solid black", boxShadow: "1px 1px 0px black", backgroundColor: "white" }}>
+                  {(["ALL", "INFO", "WARN", "ERROR"] as const).map(f => (
+                    <button key={f} onClick={() => setLogFilter(f)} style={{ padding: "2px 6px", fontSize: "0.6rem", fontWeight: "bold", border: "none", borderRight: f !== "ERROR" ? "1.5px solid black" : "none", backgroundColor: logFilter === f ? "var(--system-blue)" : "white", cursor: "pointer" }}>{f}</button>
+                  ))}
+                </div>
+                <button className="btn" onClick={() => setIsStreaming(!isStreaming)} style={{ padding: "2px 6px", fontSize: "0.6rem", backgroundColor: isStreaming ? "#fef08a" : "var(--system-green)", boxShadow: "1.5px 1.5px 0px black" }}>{isStreaming ? "PAUSE" : "RESUME"}</button>
+                <button className="btn" onClick={() => setLogs([])} style={{ padding: "2px 6px", fontSize: "0.6rem", backgroundColor: "#fecaca", boxShadow: "1.5px 1.5px 0px black" }}>CLEAR</button>
+                <button onClick={() => setIsLogMaximized(false)} title="Restore Down" style={{ width: "20px", height: "20px", border: "1.5px solid black", backgroundColor: "#bbf7d0", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, boxShadow: "1px 1px 0px black" }}>❐</button>
+              </div>
+            </div>
+            <div style={{ flex: 1, padding: "12px", overflowY: "auto", lineHeight: 1.4 }} className="font-mono">
+              {filteredLogs.length === 0 ? (
+                <div style={{ color: "var(--text-muted)", textAlign: "center", padding: "20px", fontSize: "0.75rem" }}>No logs generated yet or logs cleared.</div>
+              ) : (
+                filteredLogs.map((log, idx) => (
+                  <div key={idx} style={{ display: "flex", gap: "8px", borderBottom: "1px solid #141b2d", padding: "4px 0", fontSize: "0.75rem", alignItems: "flex-start" }}>
+                    <span style={{ color: "#64748b", flexShrink: 0 }}>[{log.timestamp}]</span>
+                    <span style={{ color: log.level === "ERROR" ? "var(--system-red)" : log.level === "WARN" ? "var(--system-yellow)" : "var(--system-green)", fontWeight: "bold", flexShrink: 0 }}>[{log.level}]</span>
+                    <span style={{ color: "#38bdf8", fontWeight: 700, flexShrink: 0 }}>[{log.source}]</span>
+                    <span style={{ color: "#e2e8f0" }}>{log.message}</span>
+                  </div>
+                ))
+              )}
+              <div ref={logsEndRef} />
+            </div>
+          </div>
+        </>
+      )}
+
+    </div>
+  );
+}
+
+interface ChatMessage {
+  id: string;
+  role: "user" | "agent";
+  content: string;
+  timestamp: string;
+  actions?: string[];
+}
+
+function AIAgentPopup({ isOpen, onClose, btnY }: { isOpen: boolean; onClose: () => void; btnY: number }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: "welcome",
+      role: "agent",
+      content: "Halo! Saya **NDELOK AI Agent** — asisten pintar untuk manajemen server Anda.\n\nSaya bisa membantu:\n• **Deploy** layanan baru dan monitoring\n• **Diagnosa** masalah sistem & log analisis\n• **Manage** plugin, network, dan konfigurasi\n• **Monitor** performa server secara real-time\n\nApa yang ingin kamu lakukan hari ini?",
+      timestamp: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
+      actions: ["Lihat Status Server", "Deploy Layanan Baru", "Analisa Log Sistem", "Cek Performa CPU/RAM"]
+    }
+  ]);
+
+  const [inputValue, setInputValue] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isTyping, isOpen]);
+
+  const getAgentResponse = (userMsg: string): { content: string; actions?: string[] } => {
+    const msg = userMsg.toLowerCase();
+
+    if (msg.includes("status") || msg.includes("health") || msg.includes("lihat status server")) {
+      return {
+        content: "✅ **Status Server: HEALTHY**\n\n```\nSERVER: production-01\nUPTIME: 4 days, 5h 32m\nOS: ndelokOS v0.18.0 (kernel 6.1-amd64)\n```\n\n**Metrik Real-time:**\n• CPU: 24% — Normal ✓\n• RAM: 312MB / 2048MB (15%) — Optimal ✓\n• Storage: 42% — Aman ✓\n• Network: ↓ 12.4 MB/s ↑ 2.1 MB/s\n\n**Layanan:**\n• ndelok-dashboard → ONLINE (port 1234)\n• api-gateway → ONLINE (port 3000)\n• postgres-db → ONLINE (port 5432)\n• auth-service → STOPPED ⚠️\n\n⚠️ `auth-service` tidak berjalan. Ingin saya restart?",
+        actions: ["Restart auth-service", "Lihat Log auth-service", "Cek Semua Layanan"]
+      };
+    }
+    if (msg.includes("deploy") || msg.includes("layanan baru") || msg.includes("launch")) {
+      return {
+        content: "🚀 **Mode Deploy Aktif**\n\nSilakan berikan informasi berikut:\n\n1. **Nama Layanan** (contoh: `payment-api`)\n2. **Port** yang digunakan (contoh: `3001`)\n3. **Sumber kode** — GitHub URL atau upload ZIP\n4. **Build command** (contoh: `npm install && npm run build`)\n5. **Start command** (contoh: `npm run start`)\n\nAtau gunakan wizard visual di halaman **Deploy**.",
+        actions: ["Buka Halaman Deploy", "Deploy via GitHub", "Upload ZIP File"]
+      };
+    }
+    if (msg.includes("log") || msg.includes("error") || msg.includes("masalah") || msg.includes("diagnosa") || msg.includes("analisa log")) {
+      return {
+        content: "🔍 **Analisa Log Sistem — 5 Menit Terakhir**\n\n```\n[01:52:25] [ERROR] [SYSTEM]  Failed healthcheck on payment-system:3002\n[01:52:26] [WARN]  [PM2]     Process payment-system restarted (exit code 1)\n[01:54:33] [WARN]  [SYSTEM]  Disk storage 82% on root partition\n[01:54:49] [ERROR] [AUTH]    Invalid API secret from IP 182.253.12.8\n```\n\n**Temuan:**\n1. ❌ `payment-system` crash berulang — kemungkinan memory leak\n2. ⚠️ Disk hampir penuh — perlu cleanup\n3. 🚨 Akses tidak sah dari IP `182.253.12.8`\n\nIngin saya jalankan tindakan otomatis?",
+        actions: ["Restart payment-system", "Bersihkan Disk Cache", "Block IP 182.253.12.8", "Export Full Report"]
+      };
+    }
+    if (msg.includes("cpu") || msg.includes("ram") || msg.includes("performa") || msg.includes("memory") || msg.includes("cek performa")) {
+      return {
+        content: "📊 **Laporan Performa Sistem**\n\n**CPU — Intel Xeon E5-2673 v4 @ 2.3GHz**\n• Current Load: 24% — Ringan\n• Peak 1h: 78% pukul 01:52\n• Avg 24h: 31%\n\n**RAM — 2048MB DDR4**\n• Digunakan: 312MB (15.2%)\n• Cached: 842MB\n• Free: 894MB\n\n**Top Proses:**\n```\nndelok-dashboard   128MB   2.5%\npostgres           512MB   0.8%\napi-gateway         96MB   1.1%\n```\n\n✅ Performa dalam kondisi baik.",
+        actions: ["Set CPU Alert", "Lihat Semua Proses", "Optimize Memory"]
+      };
+    }
+    if (msg.includes("plugin") || msg.includes("zerotier") || msg.includes("cloudflare") || msg.includes("docker") || msg.includes("manage plugin")) {
+      return {
+        content: "🔌 **Status Plugin Manager**\n\n| Plugin | Versi | Status |\n|--------|-------|--------|\n| ZeroTier ONE | v1.12.2 | 🟢 ONLINE |\n| Tmux | v3.3a | 🟢 RUNNING |\n| Cloudflare | v2024.1.0 | 🟢 CONNECTED |\n| Docker | v24.0.7 | ⚫ NOT INSTALLED |\n| Nginx | v1.25.3 | ⚫ NOT INSTALLED |\n\n**ZeroTier:** Network `8056c85e45c71a39`, IP: `10.147.20.12`\n**Cloudflare:** Tunnel aktif ke `ndelok.me` via PoP CGK",
+        actions: ["Install Docker", "Install Nginx", "Konfigurasi ZeroTier", "Buka Plugin Manager"]
+      };
+    }
+    if (msg.includes("restart") || msg.includes("stop") || msg.includes("start")) {
+      const svc = msg.includes("auth") ? "auth-service" : msg.includes("payment") ? "payment-system" : "ndelok-dashboard";
+      return {
+        content: `⚙️ **Menjalankan Perintah Server**\n\n\`\`\`bash\nadmin@ndelok-server:~$ pm2 restart ${svc}\n\`\`\`\n\n📤 Mengirim perintah...\n✅ **${svc} berhasil direstart!**\n\n**Output:**\n\`\`\`\n[PM2] Applying action restartProcessId on [${svc}]\n[PM2] [${svc}](2847) ✓\n\`\`\`\n\n✅ Layanan kembali online.`,
+        actions: ["Monitor Layanan", "Lihat Log Real-time", "Set Auto-restart"]
+      };
+    }
+    if (msg.includes("network") || msg.includes("jaringan") || msg.includes("koneksi") || msg.includes("keamanan") || msg.includes("security audit")) {
+      return {
+        content: "🌐 **Status Jaringan Server**\n\n**Interface Aktif:**\n```\neth0     172.16.0.1/24   ↑ 2.1MB/s  ↓ 12.4MB/s\nzt0      10.147.20.12/8  ZeroTier VPN\nlo       127.0.0.1       Loopback\n```\n\n**Port Terbuka:**\n```\n22    SSH      LISTEN\n80    HTTP     LISTEN\n443   HTTPS    LISTEN\n1234  Ndelok   LISTEN\n3000  API GW   LISTEN\n5432  Postgres LISTEN\n```\n\n**Cloudflare:** ✅ Connected — ndelok.me — Latency: 12ms",
+        actions: ["Lihat Semua Koneksi", "Check Firewall", "Konfigurasi Port"]
+      };
+    }
+    return {
+      content: `🤖 Saya menerima: *"${userMsg}"*\n\nCoba tanyakan tentang:\n• **Status** server & layanan\n• **Deploy** layanan baru\n• **Log** & diagnosa masalah\n• **Performa** CPU/RAM/Storage\n• **Plugin** management\n• **Jaringan** & keamanan`,
+      actions: ["Cek Status Server", "Analisa Log", "Lihat Performa", "Manage Plugin"]
+    };
+  };
+
+  const sendMessage = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const userMsg: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: "user",
+      content: trimmed,
+      timestamp: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+    };
+    setMessages(prev => [...prev, userMsg]);
+    setInputValue("");
+    setIsTyping(true);
+    await new Promise(r => setTimeout(r, 800 + Math.random() * 1200));
+    const response = getAgentResponse(trimmed);
+    const agentMsg: ChatMessage = {
+      id: `msg-${Date.now()}-agent`,
+      role: "agent",
+      content: response.content,
+      timestamp: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
+      actions: response.actions
+    };
+    setIsTyping(false);
+    setMessages(prev => [...prev, agentMsg]);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    sendMessage(inputValue);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(inputValue);
+    }
+  };
+
+  const renderContent = (content: string) => {
+    const lines = content.split("\n");
+    let inCode = false;
+    const codeLines: string[] = [];
+    const result: React.ReactNode[] = [];
+    lines.forEach((line, i) => {
+      if (line.startsWith("```")) {
+        if (!inCode) { inCode = true; codeLines.length = 0; }
+        else {
+          inCode = false;
+          result.push(
+            <pre key={`c${i}`} style={{ backgroundColor: "#0f172a", color: "#a7f3d0", padding: "8px 12px", border: "1.5px solid #334155", fontSize: "0.7rem", overflowX: "auto", margin: "4px 0", fontFamily: "monospace", lineHeight: 1.5, whiteSpace: "pre" }}>
+              {codeLines.join("\n")}
+            </pre>
+          );
+        }
+        return;
+      }
+      if (inCode) { codeLines.push(line); return; }
+      const parts = line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+      result.push(
+        <div key={i} style={{ minHeight: line === "" ? "0.5em" : undefined }}>
+          {parts.map((p, j) => {
+            if (p.startsWith("**") && p.endsWith("**")) return <strong key={j}>{p.slice(2, -2)}</strong>;
+            if (p.startsWith("`") && p.endsWith("`")) return <code key={j} style={{ backgroundColor: "#1e293b", color: "#38bdf8", padding: "1px 5px", borderRadius: "3px", fontSize: "0.78em", fontFamily: "monospace", border: "1px solid #334155" }}>{p.slice(1, -1)}</code>;
+            return <span key={j}>{p}</span>;
+          })}
+        </div>
+      );
+    });
+    return result;
+  };
+
+  const quickSuggestions = [
+    { icon: <Server size={13} />, text: "Status Server" },
+    { icon: <Zap size={13} />, text: "Performa Sistem" },
+    { icon: <FileText size={13} />, text: "Analisa Log" },
+    { icon: <Shield size={13} />, text: "Keamanan" },
+    { icon: <RefreshCw size={13} />, text: "Restart Layanan" },
+  ];
+
+  const popupHeight = 580;
+  let topPos = 300;
+  if (typeof window !== "undefined") {
+    const idealTop = btnY + 28 - (popupHeight / 2);
+    const maxTop = window.innerHeight - popupHeight - 20;
+    topPos = Math.max(20, Math.min(maxTop, idealTop));
+  }
+
+  return (
+    <div style={{
+      display: isOpen ? "flex" : "none",
+      position: "fixed",
+      top: `${topPos}px`,
+      right: "88px",
+      width: "420px",
+      height: `${popupHeight}px`,
+      maxWidth: "calc(100vw - 48px)",
+      maxHeight: "calc(100vh - 120px)",
+      zIndex: 9998,
+      flexDirection: "column",
+      border: "3px solid black",
+      boxShadow: "8px 8px 0px black",
+      overflow: "hidden",
+      backgroundColor: "white",
+      transition: "top 0.1s ease-out"
+    }}>
+      {/* Title Bar / Header */}
+      <div style={{ backgroundColor: "var(--system-yellow)", borderBottom: "3px solid black", padding: "8px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+        <span className="font-heading" style={{ fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "8px" }}>
+          <Bot size={16} /> NDELOK AI AGENT CONSOLE
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <button 
+            className="btn" 
+            onClick={() => setMessages(prev => [prev[0]])} 
+            style={{ 
+              padding: "2px 6px", 
+              fontSize: "0.6rem", 
+              backgroundColor: "white", 
+              boxShadow: "1px 1px 0px black", 
+              display: "flex", 
+              alignItems: "center", 
+              gap: "4px",
+              border: "1.5px solid black"
+            }}
+          >
+            <Trash2 size={10} /> CLEAR
+          </button>
+          <button 
+            onClick={onClose}
+            className="btn" 
+            style={{ 
+              padding: "2px 6px", 
+              fontSize: "0.65rem", 
+              boxShadow: "1px 1px 0px black",
+              backgroundColor: "black",
+              color: "white",
+              border: "1.5px solid black",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              lineHeight: 1
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-md)", display: "flex", flexDirection: "column", gap: "var(--space-md)", backgroundColor: "#f8fafc" }}>
+        {messages.map(msg => (
+          <div key={msg.id} style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start", gap: "6px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexDirection: msg.role === "user" ? "row-reverse" : "row" }}>
+              <div style={{ width: "28px", height: "28px", border: "2px solid black", backgroundColor: msg.role === "agent" ? "var(--system-yellow)" : "black", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "2px 2px 0px " + (msg.role === "agent" ? "black" : "#555") }}>
+                {msg.role === "agent" ? <Bot size={14} /> : <span style={{ color: "white", fontSize: "0.6rem", fontWeight: 700 }}>YOU</span>}
+              </div>
+              <span className="font-mono" style={{ fontSize: "0.6rem", color: "#64748b" }}>{msg.role === "agent" ? "NDELOK AI" : "ADMIN"} · {msg.timestamp}</span>
+            </div>
+            <div style={{ maxWidth: "85%", padding: "10px 14px", border: "2px solid black", backgroundColor: msg.role === "agent" ? "white" : "black", color: msg.role === "agent" ? "black" : "white", boxShadow: msg.role === "agent" ? "3px 3px 0px black" : "3px 3px 0px #555", lineHeight: 1.6, fontSize: "0.82rem" }} className="font-mono">
+              {msg.role === "agent" ? renderContent(msg.content) : <span>{msg.content}</span>}
+            </div>
+            {msg.actions && msg.role === "agent" && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", maxWidth: "85%" }}>
+                {msg.actions.map((action, idx) => (
+                  <button key={idx} className="btn" onClick={() => sendMessage(action)} style={{ padding: "3px 10px", fontSize: "0.65rem", backgroundColor: idx === 0 ? "var(--system-blue)" : "white", color: "black", boxShadow: "2px 2px 0px black", border: "1.5px solid black", cursor: "pointer", fontWeight: 700 }}>{action}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {isTyping && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <div style={{ width: "28px", height: "28px", border: "2px solid black", backgroundColor: "var(--system-yellow)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "2px 2px 0px black" }}><Bot size={14} /></div>
+              <span className="font-mono" style={{ fontSize: "0.6rem", color: "#64748b" }}>NDELOK AI · sedang mengetik...</span>
+            </div>
+            <div style={{ padding: "10px 18px", border: "2px solid black", backgroundColor: "white", boxShadow: "3px 3px 0px black", display: "flex", gap: "5px", alignItems: "center" }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "black", animation: `agentBounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+              ))}
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Quick chips */}
+      <div style={{ borderTop: "2px solid black", padding: "8px 12px", display: "flex", gap: "6px", flexWrap: "wrap", backgroundColor: "var(--secondary-bg)", flexShrink: 0 }}>
+        <span className="font-heading" style={{ fontSize: "0.6rem", color: "#64748b", alignSelf: "center", marginRight: "2px" }}>CEPAT:</span>
+        {quickSuggestions.map((s, i) => (
+          <button key={i} className="btn" onClick={() => sendMessage(s.text)} style={{ padding: "2px 8px", fontSize: "0.6rem", backgroundColor: "white", border: "1.5px solid black", boxShadow: "1.5px 1.5px 0px black", display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
+            {s.icon}{s.text}
+          </button>
+        ))}
+      </div>
+
+      {/* Input */}
+      <div style={{ borderTop: "3px solid black", padding: "var(--space-sm)", backgroundColor: "white", flexShrink: 0 }}>
+        <form onSubmit={handleSubmit} style={{ display: "flex", gap: "var(--space-sm)", alignItems: "flex-end" }}>
+          <textarea ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={handleKeyDown} placeholder="Tanya AI Agent... (Enter kirim, Shift+Enter baris baru)" rows={2} className="font-mono" style={{ flex: 1, border: "3px solid black", padding: "8px 12px", fontSize: "0.82rem", outline: "none", resize: "none", boxShadow: "inset 2px 2px 0px rgba(0,0,0,0.08)", lineHeight: 1.5 }} />
+          <button type="submit" disabled={!inputValue.trim() || isTyping} style={{ padding: "10px 18px", backgroundColor: inputValue.trim() && !isTyping ? "black" : "#94a3b8", color: "white", border: "3px solid black", boxShadow: inputValue.trim() && !isTyping ? "4px 4px 0px #555" : "none", cursor: inputValue.trim() && !isTyping ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", fontWeight: 700, flexShrink: 0, height: "62px", transition: "all 0.1s" }}>
+            <Send size={16} />KIRIM
+          </button>
+        </form>
+        <p className="font-mono" style={{ fontSize: "0.6rem", color: "#94a3b8", marginTop: "4px" }}>Enter ↵ kirim · Shift+Enter baris baru · Responds dalam Bahasa Indonesia</p>
+      </div>
+      <style>{`
+        @keyframes agentBounce {
+          0%, 60%, 100% { transform: translateY(0); }
+          30% { transform: translateY(-6px); }
+        }
+        .floating-agent-btn {
+          transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+        }
+        .floating-agent-btn:hover {
+          background-color: var(--system-yellow) !important;
+        }
+        .floating-agent-btn:active {
+          background-color: var(--system-green) !important;
+        }
+      `}</style>
+    </div>
+  );
+}
