@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"ndelok-backend/db"
+
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
@@ -34,21 +36,28 @@ func init() {
 	}
 }
 
+type SystemLog struct {
+	Timestamp string `json:"time"`
+	Level     string `json:"level"`
+	Message   string `json:"msg"`
+}
+
 type MetricsResponse struct {
-	CPU         float64 `json:"cpu"`
-	RAM         float64 `json:"ram"`
-	Storage     float64 `json:"storage"`
-	CPUInfo     string  `json:"cpu_info"`
-	RAMInfo     string  `json:"ram_info"`
-	StorageInfo string  `json:"storage_info"`
-	Uptime      string  `json:"uptime"`
-	UptimeNum   uint64  `json:"uptime_num"`
-	Swap        float64 `json:"swap"`
-	SwapInfo    string  `json:"swap_info"`
+	CPU         float64     `json:"cpu"`
+	RAM         float64     `json:"ram"`
+	Storage     float64     `json:"storage"`
+	CPUInfo     string      `json:"cpu_info"`
+	RAMInfo     string      `json:"ram_info"`
+	StorageInfo string      `json:"storage_info"`
+	Uptime      string      `json:"uptime"`
+	UptimeNum   uint64      `json:"uptime_num"`
+	Swap        float64     `json:"swap"`
+	SwapInfo    string      `json:"swap_info"`
 	Network     struct {
 		Up   float64 `json:"up"`
 		Down float64 `json:"down"`
 	} `json:"network"`
+	Logs        []SystemLog `json:"logs"`
 }
 
 func Metrics(w http.ResponseWriter, r *http.Request) {
@@ -56,6 +65,21 @@ func Metrics(w http.ResponseWriter, r *http.Request) {
 	defer metricsMu.Unlock()
 
 	resp := MetricsResponse{}
+	resp.Logs = []SystemLog{}
+
+	// Fetch logs from DB
+	if db.DB != nil {
+		rows, err := db.DB.Query("SELECT timestamp, level, message FROM system_logs ORDER BY id DESC LIMIT 15")
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var l SystemLog
+				if err := rows.Scan(&l.Timestamp, &l.Level, &l.Message); err == nil {
+					resp.Logs = append(resp.Logs, l)
+				}
+			}
+		}
+	}
 
 	// RAM
 	if v, err := mem.VirtualMemory(); err == nil {

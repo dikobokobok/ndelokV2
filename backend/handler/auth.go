@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -210,6 +211,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	// Rate limit by IP
 	if !checkRateLimit(r.RemoteAddr) {
+		db.LogEvent("WARN", fmt.Sprintf("Rate limit exceeded for login from %s", r.RemoteAddr))
 		writeJSON(w, http.StatusTooManyRequests, authResponse{Success: false, Message: "Too many login attempts. Try again later."})
 		return
 	}
@@ -236,6 +238,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	var u model.User
 	if err := row.Scan(&u.ID, &u.Username, &u.Email, &u.Password, &u.CreatedAt); err != nil {
+		db.LogEvent("WARN", fmt.Sprintf("Failed login attempt (user not found): %s", req.Username))
 		writeJSON(w, http.StatusUnauthorized, authResponse{
 			Success: false, Message: "Invalid username or password",
 		})
@@ -243,6 +246,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(req.Password)); err != nil {
+		db.LogEvent("WARN", fmt.Sprintf("Failed login attempt (incorrect password): %s", req.Username))
 		writeJSON(w, http.StatusUnauthorized, authResponse{
 			Success: false, Message: "Invalid username or password",
 		})
@@ -269,6 +273,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	fullToken := token + ":" + signature
 
 	log.Printf("login ok: %s", u.Username)
+	db.LogEvent("INFO", fmt.Sprintf("User logged in: %s", u.Username))
 	writeJSON(w, http.StatusOK, authResponse{
 		Success: true,
 		Message: "Login successful",
@@ -360,12 +365,45 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	fullToken := token + ":" + signature
 
 	log.Printf("register ok: %s <%s>", u.Username, u.Email)
+	db.LogEvent("INFO", fmt.Sprintf("User registered: %s", u.Username))
 	writeJSON(w, http.StatusCreated, authResponse{
 		Success: true,
 		Message: "Account created",
 		User:    &u,
 		Token:   fullToken,
 	})
+}
+
+// ───────── Logout ─────────
+
+func Logout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, authResponse{Success: false, Message: "Method not allowed"})
+		return
+	}
+
+	username := r.Header.Get("X-Username")
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && parts[0] == "Bearer" {
+			creds := strings.SplitN(parts[1], ":", 2)
+			if len(creds) == 2 {
+				rawToken := creds[0]
+				sessionsMu.Lock()
+				delete(sessions, rawToken)
+				sessionsMu.Unlock()
+			}
+		}
+	}
+
+	if username != "" {
+		db.LogEvent("INFO", fmt.Sprintf("User logged out: %s", username))
+	} else {
+		db.LogEvent("INFO", "User logged out")
+	}
+
+	writeJSON(w, http.StatusOK, authResponse{Success: true, Message: "Logout successful"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

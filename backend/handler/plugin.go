@@ -133,6 +133,7 @@ func ZeroTierInstall(w http.ResponseWriter, r *http.Request) {
 		cmd.Start()
 	}()
 
+	db.LogEvent("INFO", "ZeroTier plugin installation started.")
 	writeJSON(w, http.StatusOK, zerotierActionResponse{Success: true, Message: "Installation started in background"})
 }
 
@@ -160,6 +161,7 @@ func ZeroTierJoin(w http.ResponseWriter, r *http.Request) {
 	_ = saveZerotierConfig(req.NetworkID, "JOINING...", "PENDING...")
 
 	log.Printf("zerotier join ok: %s", req.NetworkID)
+	db.LogEvent("INFO", fmt.Sprintf("ZeroTier joined network: %s", req.NetworkID))
 	writeJSON(w, http.StatusOK, zerotierActionResponse{Success: true, Message: "Joined network " + req.NetworkID})
 }
 
@@ -195,6 +197,7 @@ func ZeroTierService(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("zerotier service %s ok", req.Action)
+	db.LogEvent("INFO", fmt.Sprintf("ZeroTier service %sed", req.Action))
 	writeJSON(w, http.StatusOK, zerotierActionResponse{Success: true, Message: "Service " + req.Action + "ed"})
 }
 
@@ -220,6 +223,7 @@ func ZeroTierLeave(w http.ResponseWriter, r *http.Request) {
 	_ = saveZerotierConfig("", "", "")
 
 	log.Printf("zerotier leave ok: %s", req.NetworkID)
+	db.LogEvent("INFO", fmt.Sprintf("ZeroTier left network: %s", req.NetworkID))
 	writeJSON(w, http.StatusOK, zerotierActionResponse{Success: true, Message: "Left network " + req.NetworkID})
 }
 
@@ -306,6 +310,7 @@ func TmuxInstall(w http.ResponseWriter, r *http.Request) {
 		exec.Command("sh", "-c", "apt-get update -qq && apt-get install -y -qq tmux").Run()
 	}()
 
+	db.LogEvent("INFO", "Tmux plugin installation started.")
 	writeJSON(w, http.StatusOK, tmuxActionResponse{Success: true, Message: "Installation started in background"})
 }
 
@@ -337,6 +342,7 @@ func TmuxNewSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("tmux session created: %s", req.Name)
+	db.LogEvent("INFO", fmt.Sprintf("Tmux session created: %s", req.Name))
 	writeJSON(w, http.StatusOK, tmuxActionResponse{Success: true, Message: "Session created"})
 }
 
@@ -364,6 +370,7 @@ func TmuxDeleteSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("tmux session killed: %s", req.Name)
+	db.LogEvent("INFO", fmt.Sprintf("Tmux session deleted: %s", req.Name))
 	writeJSON(w, http.StatusOK, tmuxActionResponse{Success: true, Message: "Session deleted"})
 }
 

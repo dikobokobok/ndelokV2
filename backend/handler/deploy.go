@@ -195,6 +195,7 @@ func createProject(w http.ResponseWriter, r *http.Request) {
 
 	insertID, _ := res.LastInsertId()
 	p, _ := scanProjectByID(int(insertID))
+	db.LogEvent("INFO", fmt.Sprintf("Project created: %s", safeName))
 	writeJSON(w, http.StatusCreated, projectActionResponse{Success: true, Message: "created", Project: p})
 }
 
@@ -243,6 +244,7 @@ func deleteProject(w http.ResponseWriter, r *http.Request, id int) {
 					log.Printf("delete: remove workspace %q: %v", p.Workspace, err)
 				}
 			}
+			db.LogEvent("INFO", fmt.Sprintf("Project deleted: %s", p.Name))
 		}
 
 		db.DB.Exec(`DELETE FROM projects WHERE id = ?`, id)
@@ -269,6 +271,7 @@ func toggleProject(w http.ResponseWriter, r *http.Request, id int) {
 			killProcess(p.PID)
 		}
 		updateProjectStatus(id, "STOPPED", 0)
+		db.LogEvent("INFO", fmt.Sprintf("Project stopped: %s", p.Name))
 		p, _ = scanProjectByID(id)
 		writeJSON(w, http.StatusOK, projectActionResponse{Success: true, Message: "stopped", Project: p})
 		return
@@ -276,10 +279,12 @@ func toggleProject(w http.ResponseWriter, r *http.Request, id int) {
 
 	// Start — re-run startCmd in workspace dir
 		if err := startProject(p); err != nil {
+			db.LogEvent("ERROR", fmt.Sprintf("Failed to start project %s: %v", p.Name, err))
 			writeJSON(w, http.StatusInternalServerError, projectActionResponse{Success: false, Message: err.Error()})
 			return
 		}
 
+	db.LogEvent("INFO", fmt.Sprintf("Project started: %s", p.Name))
 	p, _ = scanProjectByID(id)
 	writeJSON(w, http.StatusOK, projectActionResponse{Success: true, Message: "started", Project: p})
 }
@@ -404,6 +409,7 @@ func deployStream(w http.ResponseWriter, r *http.Request, id int) {
 
 	// 1. Update status to DEPLOYING
 	updateProjectStatus(id, "DEPLOYING", 0)
+	db.LogEvent("INFO", fmt.Sprintf("Project deployment initiated: %s", p.Name))
 	send(fmt.Sprintf("[NDELOK-DEPLOY] %s - Initializing deployment sequence for %q...", ts(), p.Name))
 	time.Sleep(200 * time.Millisecond)
 
@@ -412,6 +418,7 @@ func deployStream(w http.ResponseWriter, r *http.Request, id int) {
 	send(fmt.Sprintf("[NDELOK-DEPLOY] %s - Creating workspace directory: %s", ts(), workspace))
 	if err := os.MkdirAll(workspace, 0755); err != nil {
 		send(fmt.Sprintf("[ERROR] %s - Failed to create workspace: %v", ts(), err))
+		db.LogEvent("ERROR", fmt.Sprintf("Project %s deployment failed: failed to create workspace", p.Name))
 		updateProjectStatus(id, "ERROR", 0)
 		return
 	}
@@ -424,6 +431,7 @@ func deployStream(w http.ResponseWriter, r *http.Request, id int) {
 
 		if err := streamCommand(sConn, workspace, "git clone "+p.GithubLink+" ."); err != nil {
 			send(fmt.Sprintf("[ERROR] %s - git clone failed: %v", ts(), err))
+			db.LogEvent("ERROR", fmt.Sprintf("Project %s deployment failed: git clone failed", p.Name))
 			updateProjectStatus(id, "ERROR", 0)
 			return
 		}
@@ -440,6 +448,7 @@ func deployStream(w http.ResponseWriter, r *http.Request, id int) {
 		send(fmt.Sprintf("[NDELOK-DEPLOY] %s - Executing build command: %q", ts(), p.BuildCmd))
 		if err := streamCommand(sConn, workspace, p.BuildCmd); err != nil {
 			send(fmt.Sprintf("[ERROR] %s - Build command failed: %v", ts(), err))
+			db.LogEvent("ERROR", fmt.Sprintf("Project %s deployment failed: build command failed", p.Name))
 			updateProjectStatus(id, "ERROR", 0)
 			return
 		}
@@ -464,14 +473,16 @@ func deployStream(w http.ResponseWriter, r *http.Request, id int) {
 	setDaemonAttrs(daemonCmd)
 
 	if err := daemonCmd.Start(); err != nil {
-		logFile.Close()
-		send(fmt.Sprintf("[ERROR] %s - Daemon start failed: %v", ts(), err))
-		updateProjectStatus(id, "ERROR", 0)
-		return
-	}
+			logFile.Close()
+			send(fmt.Sprintf("[ERROR] %s - Daemon start failed: %v", ts(), err))
+			db.LogEvent("ERROR", fmt.Sprintf("Project %s deployment failed: start command failed", p.Name))
+			updateProjectStatus(id, "ERROR", 0)
+			return
+		}
 
 	pid := daemonCmd.Process.Pid
 	updateProjectStatus(id, "RUNNING", pid)
+	db.LogEvent("INFO", fmt.Sprintf("Project deployment completed: %s (PID=%d)", p.Name, pid))
 
 	// Reap in background
 	go func() {
@@ -479,6 +490,7 @@ func deployStream(w http.ResponseWriter, r *http.Request, id int) {
 		logFile.Close()
 		// Mark stopped if process exits on its own
 		updateProjectStatus(id, "STOPPED", 0)
+		db.LogEvent("INFO", fmt.Sprintf("Project stopped (process exited): %s", p.Name))
 	}()
 
 	send(fmt.Sprintf("[NDELOK-DEPLOY] %s - Daemon started. PID=%d", ts(), pid))

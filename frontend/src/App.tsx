@@ -86,6 +86,7 @@ export default function App() {
   };
 
   const doLogout = () => {
+    apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     sessionStorage.removeItem(SESSION_KEY);
     setIsLoggedIn(false);
   };
@@ -124,6 +125,7 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout, theme, setTheme 
   const [ramHistory, setRamHistory] = useState<number[]>(Array(20).fill(0));
   const [netHistory, setNetHistory] = useState<number[]>(Array(20).fill(0));
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [dashboardLogs, setDashboardLogs] = useState<{ time: string; level: string; msg: string }[]>([]);
 
   // Floating AI Agent States & Handlers
   const [isAIAgentOpen, setIsAIAgentOpen] = useState(false);
@@ -284,6 +286,9 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout, theme, setTheme 
         setRamHistory(prev => [...prev.slice(1), data.ram]);
         const netSpeed = (data.network.down || 0) + (data.network.up || 0);
         setNetHistory(prev => [...prev.slice(1), netSpeed]);
+        if (data.logs) {
+          setDashboardLogs(data.logs);
+        }
       } catch {
         // server down — keep showing last values
       }
@@ -801,9 +806,17 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout, theme, setTheme 
                     </tr>
                   </thead>
                   <tbody>
-                    <LogRow time="22:30:01" level="INFO" msg="System check completed." />
-                    <LogRow time="22:30:05" level="WARN" msg="CPU usage spike detected." />
-                    <LogRow time="22:30:12" level="INFO" msg="Network connection stable." />
+                    {dashboardLogs.length > 0 ? (
+                      dashboardLogs.map((log, idx) => (
+                        <LogRow key={idx} time={log.time} level={log.level} msg={log.msg} />
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={3} style={{ ...tableCellStyle, textAlign: "center" }} className="font-mono">
+                          No logs recorded.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

@@ -125,6 +125,7 @@ func main() {
 		mux.HandleFunc("/api/metrics", handler.Metrics)
 
 		// Protected routes (auth required)
+		mux.HandleFunc("/api/auth/logout", handler.RequireAuth(handler.Logout))
 	mux.HandleFunc("/api/plugins/zerotier/status", handler.RequireAuth(handler.ZeroTierStatus))
 	mux.HandleFunc("/api/plugins/zerotier/install", handler.RequireAuth(handler.ZeroTierInstall))
 	mux.HandleFunc("/api/plugins/zerotier/join", handler.RequireAuth(handler.ZeroTierJoin))
