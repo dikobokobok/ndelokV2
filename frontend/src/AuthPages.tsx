@@ -373,6 +373,7 @@ function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
 
   return (
     <div
+      className="auth-page"
       style={{
         minHeight: "100vh",
         backgroundColor: "var(--bg, #FFFDF5)",
@@ -383,6 +384,7 @@ function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
       {/* ── Left decorative panel ── */}
       <div
         aria-hidden="true"
+        className="auth-panel-left"
         style={{
           width: "42%",
           flexShrink: 0,
@@ -475,6 +477,7 @@ function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
 
       {/* ── Right form panel ── */}
       <div
+        className="auth-panel-right"
         style={{
           flex: 1,
           display: "flex",
@@ -693,6 +696,15 @@ function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProps) {
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
+        @media (max-width: 768px) {
+          .auth-page { flex-direction: column !important; }
+          .auth-panel-left {
+            width: 100% !important;
+            padding: 24px 20px !important;
+            min-height: auto !important;
+          }
+          .auth-panel-right { padding: 20px 16px !important; }
+        }
       `}</style>
     </div>
   );
@@ -896,6 +908,7 @@ function RegisterPage({ onLogin, onSwitchToLogin }: RegisterPageProps) {
 
   return (
     <div
+      className="auth-page"
       style={{
         height: "100vh",
         backgroundColor: "var(--bg, #FFFDF5)",
@@ -906,6 +919,7 @@ function RegisterPage({ onLogin, onSwitchToLogin }: RegisterPageProps) {
       {/* ── Left decorative panel (blue accent for register) ── */}
       <div
         aria-hidden="true"
+        className="auth-panel-left"
         style={{
           width: "42%",
           flexShrink: 0,
@@ -1056,6 +1070,7 @@ function RegisterPage({ onLogin, onSwitchToLogin }: RegisterPageProps) {
 
       {/* ── Right form panel ── */}
       <div
+        className="auth-panel-right"
         style={{
           flex: 1,
           display: "flex",
@@ -1329,6 +1344,15 @@ function RegisterPage({ onLogin, onSwitchToLogin }: RegisterPageProps) {
       <style>{`
         @keyframes spin {
           to { transform: rotate(360deg); }
+        }
+        @media (max-width: 768px) {
+          .auth-page { flex-direction: column !important; }
+          .auth-panel-left {
+            width: 100% !important;
+            padding: 24px 20px !important;
+            min-height: auto !important;
+          }
+          .auth-panel-right { padding: 20px 16px !important; }
         }
       `}</style>
     </div>

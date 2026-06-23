@@ -43,6 +43,8 @@ type MetricsResponse struct {
 	StorageInfo string  `json:"storage_info"`
 	Uptime      string  `json:"uptime"`
 	UptimeNum   uint64  `json:"uptime_num"`
+	Swap        float64 `json:"swap"`
+	SwapInfo    string  `json:"swap_info"`
 	Network     struct {
 		Up   float64 `json:"up"`
 		Down float64 `json:"down"`
@@ -61,6 +63,17 @@ func Metrics(w http.ResponseWriter, r *http.Request) {
 		usedGB := float64(v.Used) / (1024 * 1024 * 1024)
 		totalGB := float64(v.Total) / (1024 * 1024 * 1024)
 		resp.RAMInfo = fmt.Sprintf("%.1fGiB / %.1fGiB", usedGB, totalGB)
+	}
+
+	// Swap
+	if v, err := mem.SwapMemory(); err == nil && v.Total > 0 {
+		resp.Swap = v.UsedPercent
+		usedGB := float64(v.Used) / (1024 * 1024 * 1024)
+		totalGB := float64(v.Total) / (1024 * 1024 * 1024)
+		resp.SwapInfo = fmt.Sprintf("%.1fGiB / %.1fGiB", usedGB, totalGB)
+	} else {
+		resp.Swap = -1
+		resp.SwapInfo = "No swap"
 	}
 
 	// Storage

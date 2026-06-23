@@ -98,9 +98,11 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
   const [metrics, setMetrics] = useState({
     cpu: 0,
     ram: 0,
+    swap: 0,
     storage: 0,
     cpuInfo: "",
     ramInfo: "",
+    swapInfo: "",
     storageInfo: "",
     uptime: "",
     uptimeNum: 0,
@@ -108,6 +110,7 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
   });
 
   const [cpuHistory, setCpuHistory] = useState<number[]>(Array(20).fill(0));
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Floating AI Agent States & Handlers
   const [isAIAgentOpen, setIsAIAgentOpen] = useState(false);
@@ -254,9 +257,11 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
         setMetrics({
           cpu: data.cpu,
           ram: data.ram,
+          swap: data.swap ?? 0,
           storage: data.storage,
           cpuInfo: data.cpu_info || "",
           ramInfo: replaceGiB(data.ram_info || ""),
+          swapInfo: replaceGiB(data.swap_info || ""),
           storageInfo: replaceGiB(data.storage_info || ""),
           uptime: data.uptime || "",
           uptimeNum: data.uptime_num || 0,
@@ -295,9 +300,38 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+    <div className="app-layout" style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+      {/* Mobile hamburger button */}
+      <button
+        className="mobile-menu-btn"
+        onClick={() => setSidebarOpen(prev => !prev)}
+        aria-label="Toggle sidebar"
+        style={{
+          position: "fixed",
+          top: "12px",
+          left: "12px",
+          zIndex: 1001,
+          width: "40px",
+          height: "40px",
+          backgroundColor: "var(--secondary-bg, #FFFDF5)",
+          border: "var(--border-width) solid var(--ink)",
+          boxShadow: "var(--shadow)",
+          display: "none",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          fontSize: "1.2rem",
+          fontWeight: 700,
+        }}
+      >
+        {sidebarOpen ? "✕" : "☰"}
+      </button>
+
+      {/* Mobile overlay */}
+      {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+
       {/* Sidebar */}
-      <aside style={{ 
+      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`} style={{ 
         width: "280px", 
         flexShrink: 0,
         height: "100%",
@@ -431,6 +465,15 @@ function Dashboard({ loggedInUser, loggedInUserEmail, onLogout }: { loggedInUser
                 icon={<Activity size={32} />} 
                 color="var(--system-blue)"
                 spec={metrics.ramInfo}
+              />
+
+              {/* SWAP Card */}
+              <MetricCard 
+                title="SWAP" 
+                value={`${metrics.swap.toFixed(1)}%`} 
+                icon={<Activity size={32} />} 
+                color="var(--system-yellow)"
+                spec={metrics.swapInfo}
               />
 
               {/* Storage Card */}

@@ -4,3 +4,4 @@ backend/ndelok.db*
 server.exe
 .backend/
 .codegraph/
+backend/workspaces/
